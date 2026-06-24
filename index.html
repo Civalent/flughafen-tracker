@@ -1,0 +1,1845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#185FA5">
+<title>Flughafen PM — Time Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root {
+  --bg: #f2f2f7; --bg2: #ffffff; --bg3: #e5e5ea;
+  --text: #1c1c1e; --text2: #636366; --text3: #aeaeb2;
+  --border: #d1d1d6; --border2: #e5e5ea;
+  --blue: #185FA5; --blue-light: #E6F1FB; --blue-text: #B5D4F4;
+  --green: #3B6D11; --green-light: #EAF3DE; --green-text: #C0DD97;
+  --orange: #854F0B; --orange-light: #FAEEDA; --orange-text: #FAC775;
+  --red: #A32D2D; --red-light: #FCEBEB; --red-text: #F7C1C1;
+  --teal: #0F6E56; --teal-light: #E1F5EE;
+  --radius: 13px; --radius-sm: 9px;
+  --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; font-size: 14px; background: var(--bg); color: var(--text); min-height: 100vh; }
+#app { max-width: 520px; margin: 0 auto; padding: 0 0 100px; min-height: 100vh; }
+@media (min-width: 768px) { #app { max-width: 760px; } }
+@media (min-width: 1100px) { #app { max-width: 1000px; } }
+
+.card { background: var(--bg2); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); margin-bottom: 10px; }
+.btn { border: none; border-radius: var(--radius-sm); padding: 9px 15px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; transition: all .15s; display: inline-flex; align-items: center; gap: 5px; }
+.btn:active { transform: scale(.97); opacity: .9; }
+.btn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+.btn-primary { background: var(--blue); color: var(--blue-text); }
+.btn-green { background: var(--green); color: var(--green-text); }
+.btn-orange { background: var(--orange); color: var(--orange-text); }
+.btn-red { background: var(--red); color: var(--red-text); }
+.btn-ghost { background: var(--bg3); color: var(--text2); border: .5px solid var(--border); }
+.btn-outline { background: none; border: 1.5px solid currentColor; }
+.btn-full { width: 100%; justify-content: center; padding: 12px; font-size: 14px; }
+
+input[type=text], input[type=number], input[type=email], input[type=tel], input[type=time], input[type=date], textarea, select {
+  font-size: 13px; padding: 8px 11px; border-radius: var(--radius-sm);
+  border: .5px solid var(--border); background: var(--bg3); color: var(--text);
+  font-family: inherit; width: 100%; outline: none; transition: border-color .15s;
+}
+textarea { resize: vertical; min-height: 70px; }
+input:focus, textarea:focus, select:focus { border-color: var(--blue); background: var(--bg2); }
+
+.pin-dots { display: flex; justify-content: center; gap: 12px; margin: 14px 0 10px; }
+.pin-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--border); transition: background .12s; }
+.pin-dot.filled { background: var(--text); }
+.numpad { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 4px; }
+.numpad-key { background: var(--bg3); border: .5px solid var(--border2); border-radius: 12px; padding: 13px; font-size: 19px; font-weight: 500; cursor: pointer; font-family: inherit; color: var(--text); text-align: center; transition: background .1s; }
+.numpad-key:active { background: var(--border); transform: scale(.95); }
+
+.avatar { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; font-size: 12px; overflow: hidden; background-size: cover; background-position: center; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 500; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 9px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1.5px solid transparent; transition: all .15s; background: var(--bg3); color: var(--text2); }
+.chip.active { border-color: currentColor; box-shadow: 0 0 0 3px rgba(0,0,0,.05); }
+.chip-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+.tabs { display: flex; border-bottom: .5px solid var(--border2); margin-bottom: 1rem; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 9px 14px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; color: var(--text2); white-space: nowrap; transition: all .15s; }
+.tab.on { color: var(--text); border-bottom-color: var(--text); }
+
+.row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: .5px solid var(--border2); }
+.row:last-child { border-bottom: none; }
+
+.metrics { display: grid; gap: 8px; margin-bottom: 10px; }
+.metric { background: var(--bg3); border-radius: var(--radius-sm); padding: 10px 13px; }
+.metric-label { font-size: 11px; color: var(--text2); margin-bottom: 3px; }
+.metric-value { font-size: 18px; font-weight: 600; }
+
+.slabel { font-size: 11px; font-weight: 600; color: var(--text2); letter-spacing: .04em; margin-bottom: 8px; }
+
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; z-index: 999; padding: 0; }
+@media (min-width: 768px) { .modal-bg { align-items: center; padding: 1rem; } }
+.modal { background: var(--bg2); border-radius: 20px 20px 0 0; padding: 1.4rem; width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; }
+@media (min-width: 768px) { .modal { border-radius: 16px; } }
+.modal-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 1rem; }
+
+.seg-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: .5px solid var(--border2); font-size: 12px; }
+.seg-row:last-child { border-bottom: none; }
+
+.range-group { display: flex; background: var(--bg3); border-radius: 10px; padding: 3px; gap: 2px; margin-bottom: 12px; flex-wrap: wrap; }
+.range-btn { flex: 1; min-width: 60px; background: none; border: none; border-radius: 8px; padding: 7px 10px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; color: var(--text2); transition: all .15s; }
+.range-btn.on { background: var(--bg2); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+.date-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.date-nav-label { flex: 1; text-align: center; font-size: 13px; font-weight: 500; }
+
+.action-grid { display: grid; gap: 8px; }
+.loc-pin { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--text2); }
+.photo-upload { width: 80px; height: 80px; border-radius: 50%; background: var(--bg3); border: 2px dashed var(--border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; }
+.photo-upload img { width: 100%; height: 100%; object-fit: cover; }
+.badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; background: var(--red); color: #fff; border-radius: 10px; font-size: 10px; font-weight: 700; }
+
+@media (max-width: 400px) { #app { padding-bottom: 90px; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal-root"></div>
+
+<script>
+// ═════════════════════════════════════════════════════════════
+//  FLUGHAFEN PM — TIME TRACKER v2
+//  Single-file HTML app. Open in any browser on phone/tablet/desktop.
+// ═════════════════════════════════════════════════════════════
+
+const PALETTE = [
+  {c:'#185FA5',bg:'#E6F1FB'},{c:'#3B6D11',bg:'#EAF3DE'},{c:'#854F0B',bg:'#FAEEDA'},
+  {c:'#534AB7',bg:'#EEEDFE'},{c:'#993556',bg:'#FBEAF0'},{c:'#993C1D',bg:'#FAECE7'},
+  {c:'#A32D2D',bg:'#FCEBEB'},{c:'#5C4A1E',bg:'#FAF3E0'},{c:'#2E6B8A',bg:'#E3F2FA'},
+  {c:'#0F6E56',bg:'#E1F5EE'},{c:'#6B3D8A',bg:'#F3EDFB'},{c:'#7A6B00',bg:'#FAF8E0'},
+];
+const CO_COLORS = [
+  {c:'#185FA5',bg:'#E6F1FB'},{c:'#3B6D11',bg:'#EAF3DE'},
+  {c:'#854F0B',bg:'#FAEEDA'},{c:'#534AB7',bg:'#EEEDFE'},
+];
+
+const MANAGER = {id:'mgr', name:'Vanessa Gamboa', pin:'7620', initials:'VG', c:'#0F6E56', bg:'#E1F5EE', isManager:true, phone:'', email:'', photo:null};
+
+const K = {
+  roster:'fpm_roster', store:'fpm_store', companies:'fpm_companies',
+  jobs:'fpm_jobs', issues:'fpm_issues', reminders:'fpm_reminders',
+  notified:'fpm_notified' // per-day fired tracker
+};
+
+const ls = {
+  get: k => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){ console.warn('LS write failed (quota?):', e); } }
+};
+
+// ── Defaults ───────────────────────────────────────────────
+function defaultRoster() {
+  return [
+    {id:'1', name:'Nathan Rangel',   pin:'1234', initials:'NR', phone:'', email:'', photo:null, ...PALETTE[0]},
+    {id:'2', name:'Miguel Herrera',  pin:'5678', initials:'MH', phone:'', email:'', photo:null, ...PALETTE[1]},
+    {id:'3', name:'Jose Herrera',    pin:'9090', initials:'JH', phone:'', email:'', photo:null, ...PALETTE[2]},
+    {id:'4', name:'Luis Gonzalez',   pin:'1425', initials:'LG', phone:'', email:'', photo:null, ...PALETTE[3]},
+    {id:'5', name:'Emily Maldonado', pin:'2536', initials:'EM', phone:'', email:'', photo:null, ...PALETTE[4]},
+    {id:'6', name:'Alana Wood',      pin:'5869', initials:'AW', phone:'', email:'', photo:null, ...PALETTE[5]},
+    {id:'7', name:'Jorge Ramirez',   pin:'7845', initials:'JR', phone:'', email:'', photo:null, ...PALETTE[6]},
+    {id:'8', name:'Pete',            pin:'9865', initials:'PE', phone:'', email:'', photo:null, ...PALETTE[7]},
+    {id:'9', name:'Joaquin',         pin:'8754', initials:'JQ', phone:'', email:'', photo:null, ...PALETTE[8]},
+  ];
+}
+function defaultCompanies() {
+  return [
+    {id:'c1', name:'Flughafen PM',      ...CO_COLORS[0]},
+    {id:'c2', name:'Höhe Design',       ...CO_COLORS[1]},
+    {id:'c3', name:'Höhe Construction', ...CO_COLORS[2]},
+  ];
+}
+function defaultJobs() {
+  return [
+    {id:'j1', name:'Entrada Office Building', companyId:'c1', address:'Westlake, TX', lat:null, lng:null, active:true},
+    {id:'j2', name:'Shop / Office',           companyId:'c1', address:'',             lat:null, lng:null, active:true},
+  ];
+}
+function defaultReminders() {
+  return {
+    enabled:false,
+    clockIn:'07:00',
+    breakAt:'10:00',
+    lunchAt:'12:00',
+    clockOut:'17:00',
+    smsBackend:'', // future Firebase Function URL
+  };
+}
+
+const getRoster    = () => ls.get(K.roster)    || defaultRoster();
+const getCompanies = () => ls.get(K.companies) || defaultCompanies();
+const getJobs      = () => ls.get(K.jobs)      || defaultJobs();
+const getIssues    = () => ls.get(K.issues)    || [];
+const getReminders = () => ls.get(K.reminders) || defaultReminders();
+const saveRoster   = r => ls.set(K.roster, r);
+const saveCos      = c => ls.set(K.companies, c);
+const saveJobs     = j => ls.set(K.jobs, j);
+const saveIssues   = i => ls.set(K.issues, i);
+const saveRem      = r => ls.set(K.reminders, r);
+const getStore     = () => ls.get(K.store) || {};
+const saveStore    = s => ls.set(K.store, s);
+
+function todayKey() { return new Date().toISOString().slice(0,10); }
+
+function getUserDay(name, date) {
+  const s = getStore(), k = date || todayKey();
+  if (!s[k]) s[k] = {};
+  if (!s[k][name]) s[k][name] = {segments:[], notes:[]};
+  return s[k][name];
+}
+function saveUserDay(name, data, date) {
+  const s = getStore(), k = date || todayKey();
+  if (!s[k]) s[k] = {};
+  s[k][name] = data;
+  saveStore(s);
+}
+
+// ── Format helpers ─────────────────────────────────────────
+const p2 = n => n.toString().padStart(2,'0');
+function fmtTime(ts) { return new Date(ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}); }
+function fmtTimeSec(ts) { return new Date(ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+function fmtDate(iso) { return new Date(iso + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
+function fmtDateLong(iso) { return new Date(iso + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }
+function durMs(ms) {
+  if (!ms || ms <= 0) return '—';
+  const t = Math.round(ms/1000), h = Math.floor(t/3600), m = Math.floor((t%3600)/60), s = t%60;
+  if (h > 0) return h+'h '+p2(m)+'m';
+  if (m > 0) return m+'m '+p2(s)+'s';
+  return s+'s';
+}
+function durH(ms) {
+  if (!ms || ms <= 0) return '0.0h';
+  return (ms/3600000).toFixed(1)+'h';
+}
+function mkInit(name){const p=name.trim().split(/\s+/);return p.length===1?p[0].slice(0,2).toUpperCase():(p[0][0]+p[p.length-1][0]).toUpperCase();}
+
+// ── Geolocation ────────────────────────────────────────────
+function getLocation() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({lat:+pos.coords.latitude.toFixed(6), lng:+pos.coords.longitude.toFixed(6), acc:Math.round(pos.coords.accuracy), ts:Date.now()}),
+      err => { console.warn('geo:', err.message); resolve(null); },
+      {enableHighAccuracy:true, timeout:6000, maximumAge:30000}
+    );
+  });
+}
+function locLink(loc) {
+  if (!loc) return '';
+  return `<a href="https://maps.google.com/?q=${loc.lat},${loc.lng}" target="_blank" rel="noopener" class="loc-pin" style="text-decoration:none">📍 ${loc.lat.toFixed(4)},${loc.lng.toFixed(4)} ±${loc.acc}m</a>`;
+}
+
+// ── Photo upload (resize to ~200x200 jpeg) ─────────────────
+function handlePhotoFile(file, cb) {
+  if (!file) return cb(null);
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 240;
+      let w = img.width, h = img.height;
+      if (w > h) { if (w > max) { h = Math.round(h*max/w); w = max; } }
+      else      { if (h > max) { w = Math.round(w*max/h); h = max; } }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL('image/jpeg', 0.75));
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function avatarHTML(u, size) {
+  size = size || 36;
+  const init = u.initials || mkInit(u.name||'?');
+  if (u.photo) {
+    return `<div class="avatar" style="width:${size}px;height:${size}px"><img src="${u.photo}" alt=""></div>`;
+  }
+  const fs = Math.max(10, Math.round(size*.36));
+  return `<div class="avatar" style="width:${size}px;height:${size}px;background:${u.bg||'#eee'};color:${u.c||'#333'};font-size:${fs}px">${init}</div>`;
+}
+
+// ── Segment math ───────────────────────────────────────────
+function calcSegs(segs, now) {
+  const cos = getCompanies();
+  let work=0, brk=0, lunch=0;
+  const byCo = {}, byJob = {};
+  cos.forEach(c => byCo[c.id] = 0);
+  segs.forEach(seg => {
+    const end = seg.endTs || now || Date.now();
+    const d = end - seg.startTs;
+    if (seg.type==='break') brk += d;
+    else if (seg.type==='lunch') lunch += d;
+    else if (seg.type==='work') {
+      work += d;
+      if (seg.companyId) byCo[seg.companyId] = (byCo[seg.companyId]||0) + d;
+      if (seg.jobId) byJob[seg.jobId] = (byJob[seg.jobId]||0) + d;
+    }
+  });
+  return {work, brk, lunch, byCo, byJob};
+}
+
+function getStatus(segs) {
+  if (!segs || !segs.length) return 'out';
+  const last = segs[segs.length-1];
+  if (last.type==='clockout') return 'done';
+  if (!last.endTs) {
+    if (last.type==='break') return 'break';
+    if (last.type==='lunch') return 'lunch';
+    return 'working';
+  }
+  return 'idle';
+}
+function isClockedIn(segs)  { return segs && segs.length > 0 && segs.some(s=>!s.endTs); }
+function isClockedOut(segs) { return segs && segs.length > 0 && segs[segs.length-1].type==='clockout'; }
+
+// ── Reminders (browser notifications) ──────────────────────
+let REM_IV = null;
+function startReminderCheck() {
+  clearInterval(REM_IV);
+  REM_IV = setInterval(checkReminders, 30000); // every 30 sec
+  checkReminders();
+}
+function checkReminders() {
+  const r = getReminders();
+  if (!r.enabled || !A.user || A.user.isManager) return;
+  const now = new Date();
+  const hhmm = p2(now.getHours()) + ':' + p2(now.getMinutes());
+  const slots = [['clockIn','Time to clock in 🕐'], ['breakAt','Time for your break ☕'], ['lunchAt','Time for lunch 🍽️'], ['clockOut','Time to clock out ✅']];
+  slots.forEach(([k, msg]) => {
+    if (r[k] !== hhmm) return;
+    const key = todayKey() + ':' + k + ':' + A.user.name;
+    const fired = ls.get(K.notified) || {};
+    if (fired[key]) return;
+
+    // Browser notification (fires only if app is open)
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try { new Notification('Flughafen PM', {body: msg, tag: key, icon: 'icon-192.png'}); } catch(e){}
+    }
+
+    // Backend reminder (SMS/email) — fires even if app would be closed,
+    // because the manager's browser triggers it for the logged-in employee.
+    // For true scheduled delivery regardless of who's logged in, run the
+    // reminder loop on a Cloud Scheduler trigger that calls the same function.
+    if (r.smsBackend && (A.user.phone || A.user.email)) {
+      fetch(r.smsBackend, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({employee: A.user.name, message: msg, phone: A.user.phone||'', email: A.user.email||''})
+      }).catch(err => console.warn('Reminder backend failed:', err));
+    }
+
+    fired[key] = Date.now();
+    ls.set(K.notified, fired);
+  });
+}
+function requestNotifPermission() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') Notification.requestPermission();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  APP STATE
+// ══════════════════════════════════════════════════════════════
+const A = {
+  view: 'login',
+  pin: '',
+  user: null,
+  selJob: null,       // selected job id (replaces selCo)
+  mTab: 'dashboard',
+  rRange: 'daily',    // daily | weekly | biweekly | monthly
+  rDate: todayKey(),
+  rEmpFilter: 'all',  // 'all' or employee name
+  clockIv: null,
+  dashIv: null,
+};
+
+// ══════════════════════════════════════════════════════════════
+//  RENDER
+// ══════════════════════════════════════════════════════════════
+function render() {
+  const app = document.getElementById('app');
+  if (A.view==='login')    app.innerHTML = pageLogin();
+  if (A.view==='employee') app.innerHTML = pageEmployee();
+  if (A.view==='manager')  app.innerHTML = pageManager();
+
+  if (A.view==='employee') {
+    clearInterval(A.clockIv);
+    A.clockIv = setInterval(tickEmp, 1000);
+    tickEmp();
+  }
+  if (A.view==='manager' && A.mTab==='dashboard') {
+    clearInterval(A.dashIv);
+    A.dashIv = setInterval(() => {
+      const db = document.getElementById('dash-rows');
+      if (db) db.innerHTML = dashRows();
+    }, 6000);
+  } else {
+    clearInterval(A.dashIv);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  LOGIN
+// ══════════════════════════════════════════════════════════════
+function pageLogin() {
+  return `
+  <div style="padding:2rem 1rem 1rem;max-width:320px;margin:0 auto">
+    <div style="text-align:center;margin-bottom:1.5rem">
+      <div style="font-size:10px;font-weight:700;color:var(--text2);letter-spacing:.1em;margin-bottom:6px">FLUGHAFEN PM</div>
+      <div style="font-size:24px;font-weight:600;color:var(--text)">Time Tracker</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:4px">Enter your PIN to clock in</div>
+    </div>
+    <div class="card">
+      <div id="pin-name" style="min-height:22px;text-align:center;font-size:14px;font-weight:500;color:var(--text);margin-bottom:4px">&nbsp;</div>
+      <div class="pin-dots"><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div></div>
+      <div id="pin-err" style="font-size:12px;color:#A32D2D;text-align:center;min-height:18px;margin-bottom:8px"></div>
+      <div class="numpad">
+        ${['1','2','3','4','5','6','7','8','9','C','0','⌫'].map(k=>`<button class="numpad-key" onclick="pinKey('${k}')">${k}</button>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function pinKey(k) {
+  const err = document.getElementById('pin-err'); if(err) err.textContent='';
+  if(k==='C'){A.pin='';updateDots();return;}
+  if(k==='⌫'){A.pin=A.pin.slice(0,-1);updateDots();return;}
+  if(A.pin.length>=4)return;
+  A.pin+=k; updateDots();
+  if(A.pin.length===4){
+    setTimeout(()=>{
+      const pin=A.pin; A.pin=''; updateDots();
+      const all=[...getRoster(),MANAGER];
+      const user=all.find(u=>u.pin===pin);
+      if(user){
+        A.user=user;
+        A.selJob = getJobs().filter(j=>j.active)[0]?.id || null;
+        A.view = user.isManager ? 'manager' : 'employee';
+        A.mTab = 'dashboard';
+        render();
+        if (!user.isManager) { requestNotifPermission(); startReminderCheck(); }
+      } else {
+        const e=document.getElementById('pin-err'); if(e)e.textContent='Incorrect PIN — try again';
+      }
+    },130);
+  }
+}
+function updateDots() {
+  document.querySelectorAll('.pin-dot').forEach((d,i)=>d.classList.toggle('filled',i<A.pin.length));
+  const el=document.getElementById('pin-name'); if(!el)return;
+  const all=[...getRoster(),MANAGER];
+  const match=all.find(u=>u.pin===A.pin&&A.pin.length===4);
+  el.textContent=match?'👋 '+match.name:'\u00a0';
+}
+
+// ══════════════════════════════════════════════════════════════
+//  EMPLOYEE PAGE
+// ══════════════════════════════════════════════════════════════
+function pageEmployee() {
+  const u = A.user;
+  const day = getUserDay(u.name);
+  const segs = day.segments;
+  const status = getStatus(segs);
+  const clockedIn = isClockedIn(segs);
+  const clockedOut = isClockedOut(segs);
+  const cos = getCompanies();
+  const jobs = getJobs().filter(j=>j.active);
+  const {work, brk, lunch, byCo, byJob} = calcSegs(segs);
+
+  const SC = {
+    working:{bg:'var(--green-light)',c:'#27500A'}, break:{bg:'var(--orange-light)',c:'#633806'},
+    lunch:{bg:'var(--blue-light)',c:'#0C447C'},     done:{bg:'#F1EFE8',c:'#5F5E5A'},
+    out:{bg:'var(--bg3)',c:'var(--text2)'},          idle:{bg:'var(--bg3)',c:'var(--text2)'},
+  };
+  const SL = {working:'Working',break:'On break',lunch:'At lunch',done:'Clocked out',out:'Not clocked in',idle:'Working'};
+  const stDisplay = clockedOut ? 'done' : status;
+
+  // Job picker (chips grouped by company)
+  function jobChips(selectedId, onclickFn) {
+    if (!jobs.length) return '<p style="font-size:12px;color:var(--text3)">No jobs configured. Ask manager to add one.</p>';
+    return jobs.map(j=>{
+      const co = cos.find(c=>c.id===j.companyId);
+      const color = co ? co.c : 'var(--text2)';
+      return `<button class="chip${selectedId===j.id?' active':''}" style="color:${color}" onclick="${onclickFn}('${j.id}')">
+        <span class="chip-dot" style="background:${color}"></span>${j.name}${co?' · '+co.name.split(' ')[0]:''}
+      </button>`;
+    }).join('');
+  }
+
+  let actions = '';
+  if (!clockedIn && !clockedOut) {
+    const selJob = jobs.find(j=>j.id===A.selJob) || jobs[0];
+    actions = `
+      <div class="slabel">Select job</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${jobChips(A.selJob, 'selJob')}</div>
+      <button class="btn btn-green btn-full" onclick="doClock('in')" ${!selJob?'disabled':''}>
+        Clock in${selJob ? ' — '+selJob.name : ''}
+      </button>`;
+  } else if (clockedOut) {
+    actions = `
+      <div style="background:#FFF8E6;border:.5px solid #F0C050;border-radius:10px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:#7A5000;">⚠️ Clocked out — tap below if this was an accident.</div>
+      <div class="slabel" style="margin-top:10px">Resume on job</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${jobChips(A.selJob, 'selJob')}</div>
+      <button class="btn btn-green btn-full" onclick="undoClockOut()">Resume work</button>`;
+  } else if (status==='break') {
+    actions = `<button class="btn btn-green btn-full" onclick="doClock('endbreak')">End break — back to work</button>`;
+  } else if (status==='lunch') {
+    actions = `<button class="btn btn-green btn-full" onclick="doClock('endlunch')">Back from lunch</button>`;
+  } else {
+    const openSeg = segs.find(s=>!s.endTs&&s.type==='work');
+    actions = `
+      <div class="slabel">Switch job</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${jobChips(openSeg?.jobId, 'switchJob')}</div>
+      <div class="action-grid" style="grid-template-columns:1fr 1fr">
+        <button class="btn btn-orange" onclick="doClock('break')" style="justify-content:center">Start break</button>
+        <button class="btn btn-primary" onclick="doClock('lunch')" style="justify-content:center">Lunch</button>
+        <button class="btn btn-red btn-full" onclick="doClock('out')" style="grid-column:1/-1;justify-content:center">Clock out</button>
+      </div>`;
+  }
+
+  // Segment log
+  const segLog = segs.length === 0
+    ? '<p style="font-size:13px;color:var(--text3)">No activity yet.</p>'
+    : segs.filter(s=>s.type!=='clockout').map(s => {
+        const co = cos.find(c=>c.id===s.companyId);
+        const job = jobs.find(j=>j.id===s.jobId) || getJobs().find(j=>j.id===s.jobId);
+        const label = {work:'Work', break:'Break', lunch:'Lunch'}[s.type] || s.type;
+        const dur = s.endTs ? durMs(s.endTs - s.startTs) : '<span style="color:var(--teal);font-weight:500">ongoing</span>';
+        return `<div class="seg-row">
+          <span style="width:7px;height:7px;border-radius:2px;background:${co?co.c:'var(--text3)'};flex-shrink:0"></span>
+          <span style="flex:1;color:var(--text);min-width:0">
+            <div>${label}${job?' · <span style="color:'+(co?co.c:'var(--text2)')+'">'+job.name+'</span>':''}</div>
+            ${s.startLoc?'<div>'+locLink(s.startLoc)+'</div>':''}
+          </span>
+          <span style="color:var(--text2);margin-right:8px;flex-shrink:0">${dur}</span>
+          <span style="color:var(--text3);font-variant-numeric:tabular-nums;font-size:11px;flex-shrink:0">${fmtTime(s.startTs)}${s.endTs?' → '+fmtTime(s.endTs):''}</span>
+        </div>`;
+      }).join('');
+
+  // Notes
+  const noteHTML = day.notes.length === 0 ? '' : day.notes.map((n,i) => {
+    const co = cos.find(c=>c.id===n.companyId);
+    return `<div class="seg-row">
+      <span style="width:7px;height:7px;border-radius:50%;background:${co?co.c:'var(--text3)'};flex-shrink:0"></span>
+      <span style="flex:1;color:var(--text)">${n.text}</span>
+      <span style="font-size:11px;color:var(--text3);margin-right:6px">${fmtTime(n.ts)}</span>
+      <button onclick="removeNote(${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:2px 5px;font-family:inherit">✕</button>
+    </div>`;
+  }).join('');
+
+  // Hours by job
+  const allJobs = getJobs();
+  const jobBreakdown = allJobs.filter(j=>byJob[j.id]>0).map(j=>{
+    const co = cos.find(c=>c.id===j.companyId);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:.5px solid var(--border2)">
+      <span style="width:9px;height:9px;border-radius:3px;background:${co?co.c:'var(--text3)'};flex-shrink:0"></span>
+      <span style="flex:1;font-size:13px">${j.name} <span style="color:var(--text3);font-size:11px">${co?co.name:''}</span></span>
+      <span style="font-size:13px;font-weight:600;color:${co?co.c:'var(--text)'}">${durH(byJob[j.id])}</span>
+    </div>`;
+  }).join('');
+
+  return `
+  <div style="padding:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:9px">
+        ${avatarHTML(u, 40)}
+        <div>
+          <div style="font-weight:600;font-size:15px">${u.name}</div>
+          <div id="live-clock" style="font-size:11px;color:var(--text2)"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        ${u.isManager ? `<button class="btn btn-outline" style="color:var(--teal);font-size:12px;padding:5px 10px" onclick="goMgr()">Dashboard</button>` : ''}
+        <button class="btn btn-ghost" style="font-size:12px;padding:5px 10px" onclick="showIssueModal()">⚠️ Report issue</button>
+        <button class="btn btn-ghost" style="font-size:12px;padding:5px 10px" onclick="showEmpExportModal()">📄 Export</button>
+        <button class="btn btn-ghost" style="font-size:12px;padding:5px 10px" onclick="showSyncModal()">Sync</button>
+        <button class="btn btn-ghost" style="font-size:12px;padding:5px 10px" onclick="signOut()">Out</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <span class="pill" style="background:${SC[stDisplay]?.bg};color:${SC[stDisplay]?.c}">${SL[stDisplay]||stDisplay}</span>
+        <span id="live-elapsed" style="font-size:12px;color:var(--text2)"></span>
+      </div>
+      ${actions}
+    </div>
+
+    <div class="card">
+      <div class="slabel">Project notes</div>
+      <div style="display:flex;gap:7px;margin-bottom:8px">
+        <input id="note-inp" type="text" placeholder="Note…" onkeydown="if(event.key==='Enter')addNote()">
+        <button class="btn btn-ghost" onclick="addNote()" style="white-space:nowrap;flex-shrink:0">Add</button>
+      </div>
+      <div id="notes-list">${noteHTML}</div>
+    </div>
+
+    <div class="card">
+      <div class="slabel">Today's log</div>
+      ${segLog}
+    </div>
+
+    <div class="metrics" style="grid-template-columns:repeat(3,1fr)">
+      <div class="metric"><div class="metric-label">Work</div><div class="metric-value" style="color:var(--green)">${durH(work)}</div></div>
+      <div class="metric"><div class="metric-label">Breaks</div><div class="metric-value" style="color:var(--orange)">${durMs(brk)}</div></div>
+      <div class="metric"><div class="metric-label">Lunch</div><div class="metric-value" style="color:var(--blue)">${durMs(lunch)}</div></div>
+    </div>
+
+    ${jobBreakdown ? `<div class="card"><div class="slabel">Hours by job</div>${jobBreakdown}</div>` : ''}
+  </div>`;
+}
+
+function tickEmp() {
+  const cl=document.getElementById('live-clock');
+  if(cl)cl.textContent=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const el=document.getElementById('live-elapsed'); if(!el)return;
+  const day=getUserDay(A.user?.name);
+  const open=day.segments.find(s=>!s.endTs);
+  el.textContent=(open&&open.type!=='clockout')?durMs(Date.now()-open.startTs):'';
+}
+
+// ══════════════════════════════════════════════════════════════
+//  EMPLOYEE ACTIONS
+// ══════════════════════════════════════════════════════════════
+async function doClock(action) {
+  const day = getUserDay(A.user.name);
+  const segs = day.segments;
+  const jobs = getJobs();
+  const selJob = jobs.find(j=>j.id===A.selJob) || jobs.filter(j=>j.active)[0];
+  const now = Date.now();
+  const loc = await getLocation();
+
+  const closeOpen = () => { const open=segs.find(s=>!s.endTs); if(open){open.endTs=now; if(loc)open.endLoc=loc;} };
+  const lastWorkSeg = () => { const ws=segs.filter(s=>s.type==='work'); return ws.length?ws[ws.length-1]:null; };
+
+  if (action==='in') {
+    if (!selJob) { alert('Please select a job first.'); return; }
+    segs.push({type:'work', companyId:selJob.companyId, jobId:selJob.id, startTs:now, endTs:null, startLoc:loc});
+  } else if (action==='out') {
+    closeOpen();
+    segs.push({type:'clockout', companyId:null, jobId:null, startTs:now, endTs:now, startLoc:loc});
+  } else if (action==='break') {
+    closeOpen();
+    segs.push({type:'break', companyId:null, jobId:null, startTs:now, endTs:null, startLoc:loc});
+  } else if (action==='endbreak' || action==='endlunch') {
+    closeOpen();
+    const lw = lastWorkSeg();
+    segs.push({type:'work', companyId:lw?.companyId||selJob?.companyId, jobId:lw?.jobId||selJob?.id, startTs:now, endTs:null, startLoc:loc});
+  } else if (action==='lunch') {
+    closeOpen();
+    segs.push({type:'lunch', companyId:null, jobId:null, startTs:now, endTs:null, startLoc:loc});
+  }
+  saveUserDay(A.user.name, day);
+  render();
+}
+
+async function switchJob(jobId) {
+  const day = getUserDay(A.user.name);
+  const open = day.segments.find(s=>!s.endTs);
+  if (open && open.type==='work' && open.jobId===jobId) return;
+  const job = getJobs().find(j=>j.id===jobId);
+  if (!job) return;
+  const now = Date.now();
+  const loc = await getLocation();
+  if (open) { open.endTs = now; if(loc) open.endLoc = loc; }
+  day.segments.push({type:'work', companyId:job.companyId, jobId:job.id, startTs:now, endTs:null, startLoc:loc});
+  saveUserDay(A.user.name, day);
+  A.selJob = jobId;
+  render();
+}
+
+async function undoClockOut() {
+  const day = getUserDay(A.user.name);
+  const segs = day.segments;
+  const lastIdx = segs.map(s=>s.type).lastIndexOf('clockout');
+  if (lastIdx !== -1) segs.splice(lastIdx, 1);
+  const lastWork = [...segs].reverse().find(s=>s.type==='work');
+  if (lastWork && lastWork.endTs) lastWork.endTs = null;
+  const jobs = getJobs();
+  const selJob = jobs.find(j=>j.id===A.selJob) || jobs.filter(j=>j.active)[0];
+  const hasOpen = segs.some(s=>!s.endTs);
+  if (!hasOpen) {
+    const loc = await getLocation();
+    segs.push({type:'work', companyId:selJob?.companyId, jobId:selJob?.id, startTs:Date.now(), endTs:null, startLoc:loc});
+  }
+  saveUserDay(A.user.name, day);
+  render();
+}
+
+function selJob(id) { A.selJob=id; render(); }
+
+function addNote() {
+  const inp = document.getElementById('note-inp');
+  const val = (inp?.value||'').trim(); if(!val) return;
+  const day = getUserDay(A.user.name);
+  const openSeg = day.segments.find(s=>!s.endTs&&s.type==='work');
+  day.notes.push({text:val, ts:Date.now(), companyId:openSeg?.companyId||null, jobId:openSeg?.jobId||null});
+  saveUserDay(A.user.name, day);
+  if(inp) inp.value='';
+  render();
+}
+
+function removeNote(i) {
+  const day = getUserDay(A.user.name);
+  day.notes.splice(i,1);
+  saveUserDay(A.user.name, day);
+  render();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MANAGER PAGE
+// ══════════════════════════════════════════════════════════════
+function pageManager() {
+  const today = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const issueCount = getIssues().filter(i=>i.status!=='resolved').length;
+  return `
+  <div style="padding:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--text2);letter-spacing:.08em">FLUGHAFEN PM</div>
+        <div style="font-size:20px;font-weight:600">Manager Dashboard</div>
+        <div style="font-size:11px;color:var(--text2)">${today}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        ${avatarHTML(MANAGER, 32)}
+        <button class="btn btn-outline" style="color:var(--teal);font-size:12px;padding:5px 10px" onclick="goEmp()">My timesheet</button>
+        <button class="btn btn-ghost" style="font-size:12px;padding:5px 10px" onclick="signOut()">Sign out</button>
+      </div>
+    </div>
+    <div class="tabs">
+      ${[
+        ['dashboard','Dashboard'],
+        ['reports','Reports'],
+        ['team','Team'],
+        ['jobs','Jobs'],
+        ['companies','Companies'],
+        ['issues', 'Issues' + (issueCount?` <span class="badge">${issueCount}</span>`:'')],
+        ['reminders','Reminders'],
+      ].map(([id,lbl])=>`<button class="tab${A.mTab===id?' on':''}" onclick="setMTab('${id}')">${lbl}</button>`).join('')}
+    </div>
+    <div id="mgr-content">${mgrContent()}</div>
+  </div>`;
+}
+
+function mgrContent() {
+  if (A.mTab==='dashboard') return mgrDashboard();
+  if (A.mTab==='reports')   return mgrReports();
+  if (A.mTab==='team')      return mgrRoster();
+  if (A.mTab==='jobs')      return mgrJobs();
+  if (A.mTab==='companies') return mgrCompanies();
+  if (A.mTab==='issues')    return mgrIssues();
+  if (A.mTab==='reminders') return mgrReminders();
+  return '';
+}
+
+function setMTab(t) { A.mTab=t; render(); }
+
+// ══════════════════════════════════════════════════════════════
+//  MGR — DASHBOARD
+// ══════════════════════════════════════════════════════════════
+function mgrDashboard() {
+  const allUsers = [...getRoster(), MANAGER];
+  const s = getStore(), td = s[todayKey()] || {};
+  let totalIn=0, working=0, onBreak=0, done=0;
+  allUsers.forEach(u => {
+    const d = td[u.name]||{segments:[]};
+    const st = getStatus(d.segments), co = isClockedOut(d.segments), ci = isClockedIn(d.segments);
+    if (ci||co) totalIn++;
+    if (st==='working'||st==='idle') working++;
+    if (st==='break'||st==='lunch') onBreak++;
+    if (co) done++;
+  });
+  return `
+    <div class="metrics" style="grid-template-columns:repeat(4,1fr)">
+      <div class="metric"><div class="metric-label">In today</div><div class="metric-value">${totalIn}/${allUsers.length}</div></div>
+      <div class="metric"><div class="metric-label">Working</div><div class="metric-value" style="color:var(--green)">${working}</div></div>
+      <div class="metric"><div class="metric-label">On break</div><div class="metric-value" style="color:var(--orange)">${onBreak}</div></div>
+      <div class="metric"><div class="metric-label">Done</div><div class="metric-value" style="color:var(--text2)">${done}</div></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
+        <div class="slabel" style="margin:0">LIVE TEAM STATUS</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost" style="font-size:12px;padding:6px 10px" onclick="showExportModal()">📄 Export…</button>
+          <button class="btn btn-primary" style="font-size:12px;padding:6px 12px" onclick="exportTeamDayPDF()">Today PDF</button>
+        </div>
+      </div>
+      <div id="dash-rows">${dashRows()}</div>
+    </div>
+    <div class="card">
+      <div class="slabel">Import sync code</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:8px">Employee taps "Sync" → copies code → paste here to sync their hours over.</p>
+      <div style="display:flex;gap:7px">
+        <input id="sync-inp" type="text" placeholder="Paste sync code…">
+        <button class="btn btn-ghost" onclick="importSync()" style="flex-shrink:0">Import</button>
+      </div>
+      <div id="sync-msg" style="font-size:12px;margin-top:6px;min-height:14px"></div>
+    </div>`;
+}
+
+function dashRows() {
+  const allUsers = [...getRoster(), MANAGER];
+  const s = getStore(), td = s[todayKey()] || {};
+  const cos = getCompanies();
+  const jobs = getJobs();
+  const SC = {
+    working:{bg:'var(--green-light)',c:'#27500A'}, break:{bg:'var(--orange-light)',c:'#633806'},
+    lunch:{bg:'var(--blue-light)',c:'#0C447C'},     done:{bg:'#F1EFE8',c:'#5F5E5A'},
+    out:{bg:'var(--bg3)',c:'var(--text2)'},          idle:{bg:'var(--green-light)',c:'#27500A'}
+  };
+  return allUsers.map(u => {
+    const d = td[u.name]||{segments:[]};
+    const status = getStatus(d.segments);
+    const stD = isClockedOut(d.segments)?'done':status;
+    const {work} = calcSegs(d.segments);
+    const openSeg = d.segments.find(s=>!s.endTs&&s.type==='work');
+    const activeJob = openSeg ? jobs.find(j=>j.id===openSeg.jobId) : null;
+    const activeCo = openSeg ? cos.find(c=>c.id===openSeg.companyId) : null;
+    const lastLoc = openSeg?.startLoc || [...d.segments].reverse().find(x=>x.startLoc)?.startLoc;
+    return `<div class="row">
+      ${avatarHTML(u, 34)}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500">${u.name}${u.isManager?` <span style="font-size:9px;color:var(--teal);font-weight:700">MGR</span>`:''}</div>
+        <div style="font-size:11px;color:var(--text2);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          ${activeJob?`<span style="color:${activeCo?.c||'var(--text2)'}">● ${activeJob.name}</span>`:work>0?durH(work)+' total':'—'}
+          ${lastLoc?locLink(lastLoc):''}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+        <span style="font-size:12px;color:var(--text2)">${work>0?durH(work):''}</span>
+        <span class="pill" style="background:${SC[stD]?.bg};color:${SC[stD]?.c};font-size:10px">${{working:'Working',break:'Break',lunch:'Lunch',done:'Done',out:'Out',idle:'Working'}[stD]||stD}</span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="showEditTimeModal('${u.name}')" ${d.segments.length?'':'disabled'}>Edit</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="mgrExportPDF('${u.name}')" ${d.segments.length?'':'disabled'}>PDF</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MGR — REPORTS
+// ══════════════════════════════════════════════════════════════
+function mgrReports() {
+  const report = buildReport(A.rRange, A.rDate);
+  const cos = getCompanies();
+  const jobs = getJobs();
+  const allUsers = [...getRoster(), MANAGER];
+
+  const coRows = cos.filter(c=>report.byCo[c.id]>0).map(c=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:.5px solid var(--border2)">
+      <span style="width:9px;height:9px;border-radius:3px;background:${c.c}"></span>
+      <span style="flex:1;font-size:13px">${c.name}</span>
+      <span style="font-size:14px;font-weight:600;color:${c.c}">${durH(report.byCo[c.id])}</span>
+    </div>`).join('');
+
+  const jobRows = jobs.filter(j=>report.byJob[j.id]>0).map(j=>{
+    const co = cos.find(c=>c.id===j.companyId);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:.5px solid var(--border2)">
+      <span style="width:9px;height:9px;border-radius:3px;background:${co?co.c:'var(--text3)'}"></span>
+      <span style="flex:1;font-size:13px">${j.name} <span style="color:var(--text3);font-size:11px">${co?co.name:''}</span></span>
+      <span style="font-size:14px;font-weight:600;color:${co?co.c:'var(--text)'}">${durH(report.byJob[j.id])}</span>
+    </div>`;
+  }).join('');
+
+  const empRows = allUsers.filter(u=>report.byEmp[u.name]>0).map(u=>`
+    <div style="padding:8px 0;border-bottom:.5px solid var(--border2)">
+      <div style="display:flex;align-items:center;gap:8px">
+        ${avatarHTML(u, 28)}
+        <span style="flex:1;font-size:13px;font-weight:500">${u.name}</span>
+        <span style="font-size:14px;font-weight:600">${durH(report.byEmp[u.name])}</span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="mgrExportRangePDF('${u.name}','${A.rRange}','${A.rDate}')">PDF</button>
+      </div>
+      <div style="padding-left:36px;margin-top:3px">
+        ${cos.filter(c=>(report.byEmpCo[u.name]||{})[c.id]>0).map(c=>
+          `<span style="font-size:11px;color:${c.c};margin-right:10px">● ${c.name}: ${durH(report.byEmpCo[u.name][c.id])}</span>`
+        ).join('')}
+      </div>
+    </div>`).join('');
+
+  return `
+    <div class="range-group">
+      ${[['daily','Daily'],['weekly','Weekly'],['biweekly','Biweekly'],['monthly','Monthly']].map(([id,lbl])=>
+        `<button class="range-btn${A.rRange===id?' on':''}" onclick="setRRange('${id}')">${lbl}</button>`
+      ).join('')}
+    </div>
+    <div class="date-nav">
+      <button class="btn btn-ghost" style="padding:6px 12px" onclick="navReport(-1)">‹</button>
+      <div class="date-nav-label">${report.label}</div>
+      <button class="btn btn-ghost" style="padding:6px 12px" onclick="navReport(1)">›</button>
+    </div>
+    <div class="metrics" style="grid-template-columns:1fr 1fr">
+      <div class="metric"><div class="metric-label">Total hours</div><div class="metric-value" style="color:var(--green)">${durH(report.totalWork)}</div></div>
+      <div class="metric"><div class="metric-label">Days tracked</div><div class="metric-value">${report.days}</div></div>
+    </div>
+    <div class="card"><div class="slabel">By company</div>${coRows || '<p style="font-size:13px;color:var(--text3)">No data for this period.</p>'}</div>
+    <div class="card"><div class="slabel">By job</div>${jobRows || '<p style="font-size:13px;color:var(--text3)">No data for this period.</p>'}</div>
+    <div class="card" style="margin-bottom:10px"><div class="slabel">By employee</div>${empRows || '<p style="font-size:13px;color:var(--text3)">No data for this period.</p>'}</div>
+    <button class="btn btn-primary btn-full" onclick="exportReportPDF()" ${report.totalWork>0?'':'disabled'}>Export report PDF</button>`;
+}
+
+function setRRange(r){A.rRange=r;A.rDate=todayKey();render();}
+function navReport(dir){
+  const d=new Date(A.rDate+'T12:00:00');
+  if(A.rRange==='daily')d.setDate(d.getDate()+dir);
+  else if(A.rRange==='weekly')d.setDate(d.getDate()+dir*7);
+  else if(A.rRange==='biweekly')d.setDate(d.getDate()+dir*14);
+  else if(A.rRange==='monthly')d.setMonth(d.getMonth()+dir);
+  A.rDate=d.toISOString().slice(0,10);
+  render();
+}
+
+function buildReport(range, anchor) {
+  const cos = getCompanies();
+  const jobs = getJobs();
+  const allUsers = [...getRoster(), MANAGER];
+  const s = getStore();
+  const d = new Date(anchor + 'T12:00:00');
+  let dates = [];
+  if (range==='daily') {
+    dates = [anchor];
+  } else if (range==='monthly') {
+    const y = d.getFullYear(), m = d.getMonth();
+    const last = new Date(y, m+1, 0).getDate();
+    for (let i=1;i<=last;i++) {
+      const dd = new Date(y, m, i);
+      dates.push(dd.toISOString().slice(0,10));
+    }
+  } else {
+    const diff = d.getDay()===0 ? -6 : 1-d.getDay();
+    const mon = new Date(d); mon.setDate(d.getDate()+diff);
+    const count = range==='biweekly' ? 14 : 7;
+    for (let i=0;i<count;i++) {
+      const dd = new Date(mon); dd.setDate(mon.getDate()+i);
+      dates.push(dd.toISOString().slice(0,10));
+    }
+  }
+  let totalWork=0; const daysSet=new Set();
+  const byCo={}, byEmp={}, byEmpCo={}, byJob={}, byEmpJob={};
+  cos.forEach(c => byCo[c.id]=0);
+  jobs.forEach(j => byJob[j.id]=0);
+  allUsers.forEach(u => { byEmp[u.name]=0; byEmpCo[u.name]={}; byEmpJob[u.name]={}; cos.forEach(c=>byEmpCo[u.name][c.id]=0); jobs.forEach(j=>byEmpJob[u.name][j.id]=0); });
+  dates.forEach(date => {
+    const td = s[date]||{};
+    allUsers.forEach(u => {
+      const dd = td[u.name]||{segments:[]};
+      const {work, byCo:bc, byJob:bj} = calcSegs(dd.segments, null);
+      if (work>0) { totalWork+=work; daysSet.add(date); byEmp[u.name]+=work; }
+      cos.forEach(c => { if(bc[c.id]>0){ byCo[c.id]+=bc[c.id]; byEmpCo[u.name][c.id]+=bc[c.id]; }});
+      jobs.forEach(j => { if(bj[j.id]>0){ byJob[j.id]+=bj[j.id]; byEmpJob[u.name][j.id]+=bj[j.id]; }});
+    });
+  });
+  let label;
+  if (range==='daily') label = fmtDate(anchor);
+  else if (range==='monthly') label = new Date(anchor+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  else label = fmtDate(dates[0])+' – '+fmtDate(dates[dates.length-1]);
+  return {totalWork, days:daysSet.size, byCo, byEmp, byEmpCo, byJob, byEmpJob, dates, label, range, anchor};
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MGR — TEAM (ROSTER + PHOTOS)
+// ══════════════════════════════════════════════════════════════
+function mgrRoster() {
+  const roster = getRoster();
+  return `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="slabel" style="margin:0">TEAM MEMBERS</div>
+        <button class="btn btn-green" style="font-size:12px;padding:6px 12px" onclick="showAddEmpModal()">+ Add</button>
+      </div>
+      ${roster.map(u=>`
+        <div class="row">
+          ${avatarHTML(u, 36)}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500">${u.name}</div>
+            <div style="font-size:11px;color:var(--text2)">
+              PIN: <span style="font-family:monospace;font-weight:600">${u.pin}</span>
+              ${u.phone?' · '+u.phone:''}
+              ${u.email?' · '+u.email:''}
+            </div>
+          </div>
+          <button style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:14px;padding:3px 7px;font-family:inherit" onclick="showEditEmpModal('${u.id}')">✎</button>
+          <button style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:14px;padding:3px 7px;font-family:inherit" onclick="confirmRemoveEmp('${u.id}')">✕</button>
+        </div>`).join('')}
+      <div class="row">
+        ${avatarHTML(MANAGER, 36)}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500">${MANAGER.name} <span style="font-size:10px;color:var(--teal);font-weight:700">MGR</span></div>
+          <div style="font-size:11px;color:var(--text2)">PIN: <span style="font-family:monospace;font-weight:600;color:var(--teal)">${MANAGER.pin}</span></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MGR — JOBS
+// ══════════════════════════════════════════════════════════════
+function mgrJobs() {
+  const jobs = getJobs();
+  const cos = getCompanies();
+  return `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="slabel" style="margin:0">JOBS / PROJECTS</div>
+        <button class="btn btn-green" style="font-size:12px;padding:6px 12px" onclick="showJobModal()">+ Add</button>
+      </div>
+      ${jobs.length===0
+        ? '<p style="font-size:13px;color:var(--text3)">No jobs yet. Add one so employees can clock in.</p>'
+        : jobs.map(j=>{
+          const co = cos.find(c=>c.id===j.companyId);
+          return `<div class="row">
+            <span style="width:11px;height:11px;border-radius:3px;background:${co?co.c:'var(--text3)'};flex-shrink:0"></span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:500">${j.name} ${j.active?'':'<span style="font-size:9px;color:var(--text3);font-weight:700">INACTIVE</span>'}</div>
+              <div style="font-size:11px;color:var(--text2)">
+                ${co?co.name:'(no company)'}${j.address?' · '+j.address:''}
+                ${(j.lat&&j.lng)?' · <a href="https://maps.google.com/?q='+j.lat+','+j.lng+'" target="_blank" style="color:var(--blue)">📍 Map</a>':''}
+              </div>
+            </div>
+            <button style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:14px;padding:3px 7px;font-family:inherit" onclick="showJobModal('${j.id}')">✎</button>
+            <button style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:14px;padding:3px 7px;font-family:inherit" onclick="removeJob('${j.id}')">✕</button>
+          </div>`;
+        }).join('')}
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MGR — COMPANIES
+// ══════════════════════════════════════════════════════════════
+function mgrCompanies() {
+  const cos = getCompanies();
+  return `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="slabel" style="margin:0">COMPANIES</div>
+        <button class="btn btn-green" style="font-size:12px;padding:6px 12px" onclick="showCoModal()">+ Add</button>
+      </div>
+      ${cos.length===0
+        ? '<p style="font-size:13px;color:var(--text3)">No companies yet.</p>'
+        : cos.map(c=>`
+          <div class="row">
+            <span style="width:11px;height:11px;border-radius:3px;background:${c.c}"></span>
+            <span style="flex:1;font-size:13px;font-weight:500">${c.name}</span>
+            <button style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:14px;padding:3px 7px;font-family:inherit" onclick="showCoModal('${c.id}')">✎</button>
+            <button style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:14px;padding:3px 7px;font-family:inherit" onclick="removeCo('${c.id}')">✕</button>
+          </div>`).join('')}
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MGR — ISSUES
+// ══════════════════════════════════════════════════════════════
+function mgrIssues() {
+  const issues = getIssues().slice().reverse();
+  const jobs = getJobs();
+  return `
+    <div class="card">
+      <div class="slabel">EMPLOYEE ISSUES</div>
+      ${issues.length===0
+        ? '<p style="font-size:13px;color:var(--text3)">No issues reported.</p>'
+        : issues.map(iss=>{
+          const job = jobs.find(j=>j.id===iss.jobId);
+          const resolved = iss.status==='resolved';
+          return `<div style="padding:10px 0;border-bottom:.5px solid var(--border2);${resolved?'opacity:.55':''}">
+            <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:4px">
+              <span style="flex:1">
+                <div style="font-size:13px;font-weight:600">${iss.employee}${job?' <span style="color:var(--text2);font-weight:400">· '+job.name+'</span>':''}</div>
+                <div style="font-size:11px;color:var(--text3)">${new Date(iss.ts).toLocaleString()}</div>
+              </span>
+              ${resolved
+                ? `<span class="pill" style="background:var(--bg3);color:var(--text2)">✓ Resolved</span>`
+                : `<button class="btn btn-ghost" style="font-size:11px;padding:4px 9px" onclick="resolveIssue('${iss.id}')">Mark resolved</button>`}
+              <button style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:13px;padding:2px 5px;font-family:inherit" onclick="deleteIssue('${iss.id}')">✕</button>
+            </div>
+            <div style="font-size:13px;color:var(--text);background:var(--bg3);padding:8px 10px;border-radius:8px;white-space:pre-wrap">${iss.text}</div>
+          </div>`;
+        }).join('')}
+    </div>`;
+}
+
+function resolveIssue(id) {
+  const issues = getIssues();
+  const i = issues.find(x=>x.id===id); if(!i) return;
+  i.status = 'resolved'; i.resolvedTs = Date.now();
+  saveIssues(issues);
+  render();
+}
+function deleteIssue(id) {
+  if (!confirm('Delete this issue?')) return;
+  saveIssues(getIssues().filter(x=>x.id!==id));
+  render();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MGR — REMINDERS
+// ══════════════════════════════════════════════════════════════
+function mgrReminders() {
+  const r = getReminders();
+  return `
+    <div class="card">
+      <div class="slabel">REMINDER SCHEDULE</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.4">
+        Reminders fire as <strong>browser notifications</strong> on each employee's phone/computer when the app is open. For real SMS/email when the app is closed, you need a backend (Firebase Functions + Twilio/SendGrid) — see the note below.
+      </p>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500">
+          <input type="checkbox" id="rem-enabled" ${r.enabled?'checked':''} style="width:18px;height:18px;cursor:pointer">
+          Enable reminders
+        </label>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Clock-in time</label>
+          <input type="time" id="rem-clockIn" value="${r.clockIn}">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Break time</label>
+          <input type="time" id="rem-breakAt" value="${r.breakAt}">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Lunch time</label>
+          <input type="time" id="rem-lunchAt" value="${r.lunchAt}">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Clock-out time</label>
+          <input type="time" id="rem-clockOut" value="${r.clockOut}">
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="saveReminders()">Save schedule</button>
+      <div id="rem-saved" style="font-size:12px;color:var(--green);margin-top:6px;min-height:14px;text-align:center"></div>
+    </div>
+
+    <div class="card">
+      <div class="slabel">FUTURE: SMS / EMAIL BACKEND</div>
+      <p style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:10px">
+        Paste your Firebase Function URL here. When set, the app will POST to it with <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">{employee, message, phone, email}</code> at scheduled times. Your function then calls Twilio (SMS) or SendGrid (email). Until then, only browser notifications fire.
+      </p>
+      <input type="text" id="rem-backend" value="${r.smsBackend||''}" placeholder="https://us-central1-your-project.cloudfunctions.net/sendReminder">
+    </div>`;
+}
+
+function saveReminders() {
+  const r = {
+    enabled: document.getElementById('rem-enabled').checked,
+    clockIn: document.getElementById('rem-clockIn').value,
+    breakAt: document.getElementById('rem-breakAt').value,
+    lunchAt: document.getElementById('rem-lunchAt').value,
+    clockOut: document.getElementById('rem-clockOut').value,
+    smsBackend: document.getElementById('rem-backend').value.trim(),
+  };
+  saveRem(r);
+  const ok = document.getElementById('rem-saved');
+  if (ok) { ok.textContent = '✓ Saved'; setTimeout(()=>ok.textContent='', 2000); }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MODALS — generic + specific
+// ══════════════════════════════════════════════════════════════
+function showModal(html) { document.getElementById('modal-root').innerHTML = `<div class="modal-bg" onclick="bgClose(event)">${html}</div>`; }
+function closeModal() { document.getElementById('modal-root').innerHTML=''; }
+function bgClose(e) { if(e.target.classList.contains('modal-bg')) closeModal(); }
+
+// — SYNC —
+function showSyncModal() {
+  const u = A.user;
+  const day = getUserDay(u.name);
+  const code = btoa(unescape(encodeURIComponent(JSON.stringify({name:u.name,date:todayKey(),data:day}))));
+  showModal(`<div class="modal">
+    <div class="modal-title">Your sync code</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Copy this and paste in the Manager Dashboard → "Import sync code".</p>
+    <div style="background:var(--bg3);border-radius:10px;padding:10px;font-family:monospace;font-size:10px;word-break:break-all;color:var(--text2);max-height:90px;overflow-y:auto;margin-bottom:12px;border:.5px solid var(--border)">${code}</div>
+    <button class="btn btn-primary btn-full" id="copy-btn" onclick="copyCode('${code}')">Copy to clipboard</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Close</button>
+  </div>`);
+}
+function copyCode(code) {
+  navigator.clipboard.writeText(code).then(()=>{
+    const b = document.getElementById('copy-btn'); if(b){b.textContent='✓ Copied!';setTimeout(()=>{if(b)b.textContent='Copy to clipboard';},2500);}
+  }).catch(()=>{ const b=document.getElementById('copy-btn'); if(b) b.textContent='✓ Copied (select text above if needed)'; });
+}
+function importSync() {
+  const val=(document.getElementById('sync-inp')?.value||'').trim();
+  const msg=document.getElementById('sync-msg');
+  try{
+    const p=JSON.parse(decodeURIComponent(escape(atob(val))));
+    if(!p.name||!p.data)throw new Error();
+    saveUserDay(p.name,p.data,p.date);
+    if(msg){msg.style.color='#3B6D11';msg.textContent='✓ Imported '+p.name+' successfully.';}
+    document.getElementById('sync-inp').value='';
+    setTimeout(()=>{const db=document.getElementById('dash-rows');if(db)db.innerHTML=dashRows();},200);
+  } catch { if(msg){msg.style.color='#A32D2D';msg.textContent='Invalid sync code — try again.';} }
+}
+
+// — EMPLOYEE: ISSUE REPORT —
+function showIssueModal() {
+  const jobs = getJobs().filter(j=>j.active);
+  const day = getUserDay(A.user.name);
+  const open = day.segments.find(s=>!s.endTs&&s.type==='work');
+  const defaultJob = open?.jobId || jobs[0]?.id || '';
+  showModal(`<div class="modal">
+    <div class="modal-title">Report an issue</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Describe the issue. Your manager will see it on their dashboard.</p>
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Related job</label>
+    <select id="iss-job" style="margin-bottom:10px">
+      <option value="">— None / general —</option>
+      ${jobs.map(j=>`<option value="${j.id}" ${j.id===defaultJob?'selected':''}>${j.name}</option>`).join('')}
+    </select>
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Description</label>
+    <textarea id="iss-text" rows="5" placeholder="What happened? Safety, materials, schedule, equipment…"></textarea>
+    <div id="iss-err" style="font-size:12px;color:#A32D2D;min-height:16px;margin-top:6px"></div>
+    <div style="display:flex;gap:7px;margin-top:8px">
+      <button class="btn btn-primary" style="flex:1;justify-content:center;padding:11px" onclick="submitIssue()">Submit issue</button>
+      <button class="btn btn-ghost" style="flex:1;justify-content:center;padding:11px" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`);
+}
+function submitIssue() {
+  const text = (document.getElementById('iss-text')?.value||'').trim();
+  const jobId = document.getElementById('iss-job')?.value || null;
+  const err = document.getElementById('iss-err');
+  if (!text) { err.textContent='Description required.'; return; }
+  const issues = getIssues();
+  issues.push({id:'i'+Date.now(), employee:A.user.name, jobId, ts:Date.now(), text, status:'open'});
+  saveIssues(issues);
+  closeModal();
+  alert('Issue reported. Thank you.');
+}
+
+// — COMPANIES —
+function showCoModal(id) {
+  const cos = getCompanies();
+  const existing = id ? cos.find(c=>c.id===id) : null;
+  showModal(`<div class="modal">
+    <div class="modal-title">${existing?'Edit company':'Add company'}</div>
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Company name</label>
+    <input id="m-name" type="text" value="${existing?existing.name:''}" placeholder="e.g. Acme Corp" style="margin-bottom:12px">
+    <div id="m-err" style="font-size:12px;color:#A32D2D;min-height:16px;margin-bottom:8px"></div>
+    <div style="display:flex;gap:7px">
+      <button class="btn ${existing?'btn-primary':'btn-green'}" style="flex:1;justify-content:center;padding:11px" onclick="${existing?`saveEditCo('${id}')`:'saveAddCo()'}">${existing?'Save':'Add'}</button>
+      <button class="btn btn-ghost" style="flex:1;justify-content:center;padding:11px" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`);
+  setTimeout(()=>document.getElementById('m-name')?.focus(),60);
+}
+function saveAddCo() {
+  const name=(document.getElementById('m-name')?.value||'').trim();
+  const err=document.getElementById('m-err');
+  if(!name){err.textContent='Name required.';return;}
+  const cos=getCompanies();
+  if(cos.find(c=>c.name.toLowerCase()===name.toLowerCase())){err.textContent='Already exists.';return;}
+  const col=CO_COLORS[cos.length%CO_COLORS.length];
+  cos.push({id:'c'+Date.now(),name,...col});
+  saveCos(cos);closeModal();render();
+}
+function saveEditCo(id) {
+  const name=(document.getElementById('m-name')?.value||'').trim();
+  const err=document.getElementById('m-err');
+  if(!name){err.textContent='Name required.';return;}
+  const cos=getCompanies();const idx=cos.findIndex(c=>c.id===id);if(idx===-1)return;
+  if(cos.find(c=>c.name.toLowerCase()===name.toLowerCase()&&c.id!==id)){err.textContent='Name already exists.';return;}
+  cos[idx].name=name;saveCos(cos);closeModal();render();
+}
+function removeCo(id) {
+  if (!confirm('Remove this company? Jobs under it will lose their company link.')) return;
+  saveCos(getCompanies().filter(c=>c.id!==id));
+  render();
+}
+
+// — JOBS —
+function showJobModal(id) {
+  const jobs = getJobs();
+  const cos = getCompanies();
+  const j = id ? jobs.find(x=>x.id===id) : null;
+  showModal(`<div class="modal">
+    <div class="modal-title">${j?'Edit job':'Add job'}</div>
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Job / project name</label>
+    <input id="j-name" type="text" value="${j?j.name:''}" placeholder="e.g. Entrada Office" style="margin-bottom:10px">
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Company</label>
+    <select id="j-co" style="margin-bottom:10px">
+      ${cos.map(c=>`<option value="${c.id}" ${j&&j.companyId===c.id?'selected':''}>${c.name}</option>`).join('')}
+    </select>
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Address (optional)</label>
+    <input id="j-addr" type="text" value="${j?j.address||'':''}" placeholder="Street, city" style="margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div>
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Latitude</label>
+        <input id="j-lat" type="text" value="${j&&j.lat!=null?j.lat:''}" placeholder="32.9483">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Longitude</label>
+        <input id="j-lng" type="text" value="${j&&j.lng!=null?j.lng:''}" placeholder="-97.0792">
+      </div>
+    </div>
+    <button class="btn btn-ghost" style="margin-bottom:12px;width:100%;justify-content:center" onclick="fillJobLoc()">📍 Use my current location</button>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;margin-bottom:12px">
+      <input type="checkbox" id="j-active" ${(!j||j.active)?'checked':''} style="width:16px;height:16px;cursor:pointer">
+      Active (visible to employees)
+    </label>
+    <div id="j-err" style="font-size:12px;color:#A32D2D;min-height:16px;margin-bottom:8px"></div>
+    <div style="display:flex;gap:7px">
+      <button class="btn ${j?'btn-primary':'btn-green'}" style="flex:1;justify-content:center;padding:11px" onclick="${j?`saveEditJob('${id}')`:'saveAddJob()'}">${j?'Save':'Add'}</button>
+      <button class="btn btn-ghost" style="flex:1;justify-content:center;padding:11px" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`);
+  setTimeout(()=>document.getElementById('j-name')?.focus(),60);
+}
+async function fillJobLoc() {
+  const loc = await getLocation();
+  if (!loc) { alert('Could not get location.'); return; }
+  document.getElementById('j-lat').value = loc.lat;
+  document.getElementById('j-lng').value = loc.lng;
+}
+function jobFormVals() {
+  const name=(document.getElementById('j-name')?.value||'').trim();
+  const companyId=document.getElementById('j-co')?.value;
+  const address=(document.getElementById('j-addr')?.value||'').trim();
+  const latRaw=(document.getElementById('j-lat')?.value||'').trim();
+  const lngRaw=(document.getElementById('j-lng')?.value||'').trim();
+  const active=document.getElementById('j-active')?.checked;
+  const lat=latRaw?parseFloat(latRaw):null;
+  const lng=lngRaw?parseFloat(lngRaw):null;
+  return {name, companyId, address, lat, lng, active};
+}
+function saveAddJob() {
+  const v = jobFormVals(); const err=document.getElementById('j-err');
+  if(!v.name){err.textContent='Name required.';return;}
+  const jobs = getJobs();
+  jobs.push({id:'j'+Date.now(), ...v});
+  saveJobs(jobs); closeModal(); render();
+}
+function saveEditJob(id) {
+  const v = jobFormVals(); const err=document.getElementById('j-err');
+  if(!v.name){err.textContent='Name required.';return;}
+  const jobs = getJobs();
+  const idx = jobs.findIndex(x=>x.id===id); if(idx===-1)return;
+  jobs[idx] = {...jobs[idx], ...v};
+  saveJobs(jobs); closeModal(); render();
+}
+function removeJob(id) {
+  if(!confirm('Remove this job? Historical time records stay intact.'))return;
+  saveJobs(getJobs().filter(j=>j.id!==id));
+  render();
+}
+
+// — EMPLOYEES (add/edit, with photo + phone + email) —
+function showAddEmpModal() { showEmpModal(null); }
+function showEditEmpModal(id) { showEmpModal(id); }
+function showEmpModal(id) {
+  const roster=getRoster();
+  const u=id?roster.find(r=>r.id===id):null;
+  showModal(`<div class="modal">
+    <div class="modal-title">${u?'Edit employee':'Add employee'}</div>
+
+    <div style="display:flex;justify-content:center;margin-bottom:14px">
+      <label class="photo-upload" id="photo-preview" for="photo-input">
+        ${u&&u.photo?`<img src="${u.photo}" alt="">`:'<span style="font-size:11px;color:var(--text3);text-align:center;padding:0 4px">Tap to add<br>photo</span>'}
+      </label>
+      <input type="file" id="photo-input" accept="image/*" style="display:none" onchange="onPhotoChange(event)">
+    </div>
+
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Full name</label>
+    <input id="m-name" type="text" value="${u?u.name:''}" placeholder="e.g. Maria Santos" style="margin-bottom:10px">
+
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">PIN (4 digits)</label>
+    <input id="m-pin" type="text" inputmode="numeric" maxlength="4" value="${u?u.pin:''}" placeholder="1234" style="margin-bottom:10px;font-family:monospace;letter-spacing:.15em;font-size:16px">
+
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Phone (for SMS reminders, optional)</label>
+    <input id="m-phone" type="tel" value="${u?u.phone||'':''}" placeholder="+1 555 123 4567" style="margin-bottom:10px">
+
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Email (for email reminders, optional)</label>
+    <input id="m-email" type="email" value="${u?u.email||'':''}" placeholder="maria@example.com" style="margin-bottom:12px">
+
+    <div id="m-err" style="font-size:12px;color:#A32D2D;min-height:16px;margin-bottom:8px"></div>
+    <div style="display:flex;gap:7px">
+      <button class="btn ${u?'btn-primary':'btn-green'}" style="flex:1;justify-content:center;padding:11px" onclick="${u?`saveEditEmp('${id}')`:'saveAddEmp()'}">${u?'Save changes':'Add employee'}</button>
+      <button class="btn btn-ghost" style="flex:1;justify-content:center;padding:11px" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`);
+  setTimeout(()=>document.getElementById('m-name')?.focus(),60);
+  // store pending photo on the modal element
+  window._pendingPhoto = u?.photo || null;
+}
+
+function onPhotoChange(ev) {
+  const f = ev.target.files?.[0]; if (!f) return;
+  handlePhotoFile(f, dataURL => {
+    window._pendingPhoto = dataURL;
+    const preview = document.getElementById('photo-preview');
+    if (preview) preview.innerHTML = `<img src="${dataURL}" alt="">`;
+  });
+}
+
+function empFormVals() {
+  return {
+    name:(document.getElementById('m-name')?.value||'').trim(),
+    pin:(document.getElementById('m-pin')?.value||'').trim(),
+    phone:(document.getElementById('m-phone')?.value||'').trim(),
+    email:(document.getElementById('m-email')?.value||'').trim(),
+    photo: window._pendingPhoto || null,
+  };
+}
+function saveAddEmp() {
+  const v = empFormVals();
+  const err=document.getElementById('m-err');
+  if(!v.name){err.textContent='Name required.';return;}
+  if(!/^\d{4}$/.test(v.pin)){err.textContent='PIN must be 4 digits.';return;}
+  const roster=getRoster();
+  if(v.pin===MANAGER.pin||roster.find(r=>r.pin===v.pin)){err.textContent='PIN already in use.';return;}
+  if(roster.find(r=>r.name.toLowerCase()===v.name.toLowerCase())){err.textContent='Name already exists.';return;}
+  const p=PALETTE[roster.length%PALETTE.length];
+  roster.push({id:Date.now().toString(),...v,initials:mkInit(v.name),...p});
+  saveRoster(roster);closeModal();render();
+}
+function saveEditEmp(id) {
+  const v = empFormVals();
+  const err=document.getElementById('m-err');
+  if(!v.name){err.textContent='Name required.';return;}
+  if(!/^\d{4}$/.test(v.pin)){err.textContent='PIN must be 4 digits.';return;}
+  const roster=getRoster();
+  if(v.pin===MANAGER.pin||roster.find(r=>r.pin===v.pin&&r.id!==id)){err.textContent='PIN already in use.';return;}
+  if(roster.find(r=>r.name.toLowerCase()===v.name.toLowerCase()&&r.id!==id)){err.textContent='Name already exists.';return;}
+  const idx=roster.findIndex(r=>r.id===id);if(idx===-1)return;
+  const oldName=roster[idx].name;
+  roster[idx]={...roster[idx],...v,initials:mkInit(v.name)};
+  if(oldName!==v.name){const s=getStore(),t=todayKey();if(s[t]&&s[t][oldName]){s[t][v.name]=s[t][oldName];delete s[t][oldName];saveStore(s);}}
+  saveRoster(roster);closeModal();render();
+}
+function confirmRemoveEmp(id) {
+  const u=getRoster().find(r=>r.id===id);if(!u)return;
+  showModal(`<div class="modal">
+    <div class="modal-title">Remove ${u.name}?</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Their time records stay. They won't be able to log in.</p>
+    <div style="display:flex;gap:7px">
+      <button class="btn btn-red" style="flex:1;justify-content:center;padding:11px" onclick="doRemoveEmp('${id}')">Remove</button>
+      <button class="btn btn-ghost" style="flex:1;justify-content:center;padding:11px" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`);
+}
+function doRemoveEmp(id) { saveRoster(getRoster().filter(r=>r.id!==id));closeModal();render(); }
+
+// — EDIT TIME (manager) —
+function showEditTimeModal(name, targetDate) {
+  const date = targetDate || todayKey();
+  const day = getUserDay(name, date);
+  const cos = getCompanies();
+  const jobs = getJobs();
+  const segs = day.segments;
+  function tsToTimeInput(ts) { if (!ts) return ''; const d=new Date(ts); return p2(d.getHours())+':'+p2(d.getMinutes()); }
+  const segLabel = {work:'Work',break:'Break',lunch:'Lunch',clockout:'Clock out'};
+  const segColor = {work:'var(--green)',break:'var(--orange)',lunch:'var(--blue)',clockout:'var(--text2)'};
+  const segRows = segs.map((s,i)=>{
+    const co = cos.find(c=>c.id===s.companyId);
+    const job = jobs.find(j=>j.id===s.jobId);
+    const label = segLabel[s.type] || s.type;
+    const color = segColor[s.type] || 'var(--text)';
+    const isOpen = !s.endTs && s.type !== 'clockout';
+    return `<div style="padding:10px 0;border-bottom:.5px solid var(--border2)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="width:9px;height:9px;border-radius:3px;background:${color};flex-shrink:0"></span>
+        <span style="font-size:13px;font-weight:500;flex:1;color:${color}">${label}${job?' · <span style="color:'+(co?co.c:'var(--text2)')+'">'+job.name+'</span>':''}</span>
+        ${s.type !== 'clockout' ? `<button onclick="deleteSeg('${name}','${date}',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:12px;padding:2px 6px;font-family:inherit">✕ Delete</button>` : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Start</div><input type="time" id="seg-start-${i}" value="${tsToTimeInput(s.startTs)}"></div>
+        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">End ${isOpen?'<span style="color:var(--green);font-weight:500">(open)</span>':''}</div><input type="time" id="seg-end-${i}" value="${tsToTimeInput(s.endTs)}" ${s.type==='clockout'?'disabled':''}></div>
+      </div>
+      ${s.startLoc?'<div style="margin-top:6px">'+locLink(s.startLoc)+'</div>':''}
+    </div>`;
+  }).join('');
+  const alreadyOut = isClockedOut(segs);
+  const addClockOutBtn = !alreadyOut && segs.length > 0 ? `<button onclick="addManualClockOut('${name}','${date}')" class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:8px;font-size:13px">+ Add clock-out time</button>` : '';
+  showModal(`<div class="modal">
+    <div class="modal-title">Edit time — ${name}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;padding:8px 10px;background:var(--bg3);border-radius:8px">📅 ${fmtDate(date)} · Changes recalculate all totals.</div>
+    <div id="seg-edit-list">${segs.length===0?'<p style="font-size:13px;color:var(--text3);text-align:center;padding:16px 0">No entries.</p>':segRows}</div>
+    ${addClockOutBtn}
+    <div id="edit-err" style="font-size:12px;color:#A32D2D;min-height:16px;margin-top:8px"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-primary" style="flex:1;justify-content:center;padding:11px" onclick="saveEditTime('${name}','${date}',${segs.length})">Save changes</button>
+      <button class="btn btn-ghost" style="flex:1;justify-content:center;padding:11px" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`);
+}
+function saveEditTime(name, date, segCount) {
+  const err = document.getElementById('edit-err');
+  const day = getUserDay(name, date);
+  const segs = day.segments;
+  function timeInputToTs(val, baseIso) {
+    if (!val) return null;
+    const [h, m] = val.split(':').map(Number);
+    const d = new Date(baseIso + 'T00:00:00');
+    d.setHours(h, m, 0, 0);
+    return d.getTime();
+  }
+  const updated = [];
+  for (let i = 0; i < segs.length; i++) {
+    const s = {...segs[i]};
+    const startEl = document.getElementById('seg-start-'+i);
+    const endEl   = document.getElementById('seg-end-'+i);
+    if (!startEl) continue;
+    const newStart = timeInputToTs(startEl.value, date);
+    const newEnd   = endEl && endEl.value ? timeInputToTs(endEl.value, date) : s.endTs;
+    if (newStart && newEnd && newEnd <= newStart) { err.textContent = `Entry ${i+1}: end must be after start.`; return; }
+    s.startTs = newStart || s.startTs;
+    if (s.type !== 'clockout') s.endTs = newEnd || null;
+    updated.push(s);
+  }
+  updated.sort((a,b) => a.startTs - b.startTs);
+  day.segments = updated;
+  saveUserDay(name, day, date);
+  closeModal();
+  render();
+}
+function deleteSeg(name, date, idx) {
+  if (!confirm('Delete this entry?')) return;
+  const day = getUserDay(name, date);
+  day.segments.splice(idx, 1);
+  saveUserDay(name, day, date);
+  showEditTimeModal(name, date);
+}
+function addManualClockOut(name, date) {
+  const day = getUserDay(name, date);
+  const now = new Date();
+  day.segments.push({type:'clockout', companyId:null, jobId:null, startTs:now.getTime(), endTs:now.getTime()});
+  saveUserDay(name, day, date);
+  showEditTimeModal(name, date);
+}
+
+// — EXPORT MODALS —
+function showEmpExportModal() {
+  showModal(`<div class="modal">
+    <div class="modal-title">Export my timesheet</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Pick a range, then download PDF.</p>
+    <div class="action-grid" style="grid-template-columns:1fr 1fr;gap:8px">
+      <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="closeModal();exportMyDayPDF()">Today</button>
+      <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="closeModal();exportMyRangePDF('weekly')">This week</button>
+      <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="closeModal();exportMyRangePDF('biweekly')">Last 2 weeks</button>
+      <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="closeModal();exportMyRangePDF('monthly')">This month</button>
+    </div>
+    <button class="btn btn-ghost btn-full" style="margin-top:10px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+function showExportModal() {
+  showModal(`<div class="modal">
+    <div class="modal-title">Export team timesheets</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Pick what to export.</p>
+    <div class="action-grid" style="grid-template-columns:1fr 1fr;gap:8px">
+      <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="closeModal();exportTeamDayPDF()">Team — Today</button>
+      <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="closeModal();exportTeamRangePDF('weekly')">Team — Week</button>
+      <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="closeModal();exportTeamRangePDF('biweekly')">Team — 2 weeks</button>
+      <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="closeModal();exportTeamRangePDF('monthly')">Team — Month</button>
+    </div>
+    <button class="btn btn-ghost btn-full" style="margin-top:10px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  NAV
+// ══════════════════════════════════════════════════════════════
+function goMgr() { clearInterval(A.clockIv); A.view='manager'; A.mTab='dashboard'; render(); }
+function goEmp() { clearInterval(A.dashIv); A.user=MANAGER; A.view='employee'; render(); }
+function signOut() { clearInterval(A.clockIv); clearInterval(A.dashIv); clearInterval(REM_IV); A.user=null; A.view='login'; A.pin=''; render(); }
+
+// ══════════════════════════════════════════════════════════════
+//  PDF EXPORTS
+// ══════════════════════════════════════════════════════════════
+function pdfHead(doc, title, sub) {
+  const lm=40; let y=40;
+  doc.setFillColor(24,95,165); doc.rect(0,0,612,4,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(150,150,150);
+  doc.text('FLUGHAFEN PM', lm, y); y+=16;
+  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(20,20,20);
+  doc.text(title, lm, y); y+=6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(100,100,100);
+  doc.text(sub, lm, y+12); y+=28;
+  return y;
+}
+function pdfFoot(doc, y, extra) {
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(170,170,170);
+  doc.text('Generated '+new Date().toLocaleString()+' · Flughafen PM'+(extra?' · '+extra:''), 40, y);
+}
+
+function buildDayPDF(name, day, date) {
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const cos=getCompanies();
+  const jobs=getJobs();
+  const sub = fmtDateLong(date||todayKey());
+  const {work,brk,lunch,byCo,byJob}=calcSegs(day.segments);
+  const lm=40,rm=572; let y=pdfHead(doc,'Daily Timesheet',sub);
+
+  doc.setFillColor(240,244,250); doc.roundedRect(lm,y,rm-lm,44,4,4,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20,20,20);
+  doc.text(name, lm+12, y+17);
+  const firstSeg=day.segments[0], lastSeg=day.segments.find(s=>s.type==='clockout');
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,90,90);
+  doc.text(firstSeg?fmtTimeSec(firstSeg.startTs)+(lastSeg?' – '+fmtTimeSec(lastSeg.startTs):' – in progress'):'No clock-in', lm+12, y+32);
+  y+=54;
+
+  const cw=(rm-lm-16)/3;
+  [['Work',work,[59,109,17]],['Breaks',brk,[133,79,11]],['Lunch',lunch,[24,95,165]]].forEach(([l,ms,rgb],i)=>{
+    const x=lm+i*(cw+8);
+    doc.setFillColor(248,249,251); doc.roundedRect(x,y,cw,46,3,3,'F');
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(110,110,110); doc.text(l,x+8,y+14);
+    doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(...rgb); doc.text(durH(ms),x+8,y+34);
+  }); y+=58;
+
+  const activeJobs=jobs.filter(j=>byJob[j.id]>0);
+  if(activeJobs.length){
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20); doc.text('By job',lm,y); y+=4;
+    doc.setFillColor(24,95,165); doc.rect(lm,y,rm-lm,1,'F'); y+=13;
+    activeJobs.forEach(j=>{
+      const co = cos.find(c=>c.id===j.companyId);
+      doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(50,50,50); doc.text(j.name+(co?' ('+co.name+')':''),lm,y);
+      doc.setFont('helvetica','bold'); doc.setTextColor(24,95,165); doc.text(durH(byJob[j.id]),rm,y,{align:'right'});
+      y+=16;
+    }); y+=8;
+  }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20); doc.text('Time log',lm,y); y+=4;
+  doc.setFillColor(24,95,165); doc.rect(lm,y,rm-lm,1,'F'); y+=13;
+  day.segments.filter(s=>s.type!=='clockout').forEach(s=>{
+    const job=jobs.find(j=>j.id===s.jobId);
+    const label={work:'Work',break:'Break',lunch:'Lunch'}[s.type]||s.type;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(50,50,50);
+    doc.text(label+(job?' — '+job.name:''),lm,y);
+    doc.setTextColor(110,110,110);
+    doc.text(fmtTimeSec(s.startTs)+(s.endTs?' → '+fmtTimeSec(s.endTs):''),rm,y,{align:'right'});
+    y+=13;
+    if (s.startLoc) {
+      doc.setFontSize(8); doc.setTextColor(130,130,130);
+      doc.text('  start: '+s.startLoc.lat.toFixed(4)+','+s.startLoc.lng.toFixed(4)+' ±'+s.startLoc.acc+'m', lm, y);
+      y+=11;
+    }
+    if(y>720){doc.addPage();y=48;}
+  });
+
+  if(day.notes.length){
+    y+=8; doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20); doc.text('Notes',lm,y); y+=4;
+    doc.setFillColor(24,95,165); doc.rect(lm,y,rm-lm,1,'F'); y+=13;
+    day.notes.forEach(n=>{
+      const lines=doc.splitTextToSize('• '+n.text, rm-lm-80);
+      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(50,50,50);
+      doc.text(lines,lm,y); doc.setTextColor(120,120,120); doc.text(fmtTime(n.ts),rm,y,{align:'right'});
+      y+=lines.length*13+3; if(y>720){doc.addPage();y=48;}
+    });
+  }
+
+  y+=14; pdfFoot(doc, y);
+  return doc;
+}
+
+function exportMyDayPDF() {
+  const day=getUserDay(A.user.name);
+  buildDayPDF(A.user.name,day,todayKey()).save(`timesheet-${A.user.name.replace(/\s+/g,'-').toLowerCase()}-${todayKey()}.pdf`);
+}
+function exportMyPDF() { exportMyDayPDF(); }
+function mgrExportPDF(name) {
+  const s=getStore(), d=(s[todayKey()]||{})[name]||{segments:[],notes:[]};
+  buildDayPDF(name,d,todayKey()).save(`timesheet-${name.replace(/\s+/g,'-').toLowerCase()}-${todayKey()}.pdf`);
+}
+
+// Per-employee range PDF (week/biweek/month)
+function buildRangePDF(name, range, anchor) {
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const cos=getCompanies(), jobs=getJobs();
+  const s=getStore();
+  const r = buildReport(range, anchor);
+  // filter this user only
+  const titles={daily:'Daily',weekly:'Weekly',biweekly:'Biweekly',monthly:'Monthly'};
+  const lm=40,rm=572; let y=pdfHead(doc, titles[range]+' Timesheet — '+name, r.label);
+
+  const userWork = r.byEmp[name] || 0;
+  doc.setFillColor(240,244,250); doc.roundedRect(lm,y,rm-lm,44,4,4,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20,20,20);
+  doc.text(name, lm+12, y+17);
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,90,90);
+  doc.text('Total: '+durH(userWork)+' · Days worked: '+countDaysWorked(name, r.dates), lm+12, y+32);
+  y+=54;
+
+  // Per-day breakdown
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20); doc.text('By day',lm,y); y+=4;
+  doc.setFillColor(24,95,165); doc.rect(lm,y,rm-lm,1,'F'); y+=13;
+  r.dates.forEach(date=>{
+    const dd = (s[date]||{})[name] || {segments:[]};
+    const {work} = calcSegs(dd.segments);
+    if (work<=0) return;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(50,50,50);
+    doc.text(fmtDate(date), lm, y);
+    doc.setFont('helvetica','bold'); doc.setTextColor(59,109,17); doc.text(durH(work), rm, y, {align:'right'});
+    y+=14;
+    // first/last
+    const first = dd.segments[0], lastCO = dd.segments.find(x=>x.type==='clockout');
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120);
+    doc.text('  '+(first?fmtTime(first.startTs):'—')+(lastCO?' → '+fmtTime(lastCO.startTs):''), lm, y);
+    y+=13;
+    if(y>720){doc.addPage();y=48;}
+  });
+  y+=10;
+
+  // Per-job
+  const userJobTotals = r.byEmpJob[name] || {};
+  const activeJobs = jobs.filter(j=>userJobTotals[j.id]>0);
+  if (activeJobs.length) {
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20); doc.text('By job',lm,y); y+=4;
+    doc.setFillColor(24,95,165); doc.rect(lm,y,rm-lm,1,'F'); y+=13;
+    activeJobs.forEach(j=>{
+      const co = cos.find(c=>c.id===j.companyId);
+      doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(50,50,50);
+      doc.text(j.name+(co?' ('+co.name+')':''), lm, y);
+      doc.setFont('helvetica','bold'); doc.setTextColor(24,95,165);
+      doc.text(durH(userJobTotals[j.id]), rm, y, {align:'right'});
+      y+=15;
+      if(y>720){doc.addPage();y=48;}
+    });
+  }
+
+  y+=14; pdfFoot(doc, y);
+  return doc;
+}
+function countDaysWorked(name, dates) {
+  const s = getStore();
+  let n=0;
+  dates.forEach(d=>{
+    const dd = (s[d]||{})[name] || {segments:[]};
+    const {work} = calcSegs(dd.segments);
+    if (work>0) n++;
+  });
+  return n;
+}
+function exportMyRangePDF(range) {
+  buildRangePDF(A.user.name, range, todayKey()).save(`timesheet-${A.user.name.replace(/\s+/g,'-').toLowerCase()}-${range}-${todayKey()}.pdf`);
+}
+function mgrExportRangePDF(name, range, anchor) {
+  buildRangePDF(name, range, anchor).save(`timesheet-${name.replace(/\s+/g,'-').toLowerCase()}-${range}-${anchor}.pdf`);
+}
+
+// Team day PDF (already existed as exportAllPDF; rename & include jobs)
+function exportTeamDayPDF() {
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const allUsers=[...getRoster(),MANAGER], cos=getCompanies();
+  const s=getStore(), td=s[todayKey()]||{};
+  const date=fmtDateLong(todayKey());
+  const lm=40,rm=572; let y=pdfHead(doc,'Team Timesheet — Today',date);
+
+  doc.setFillColor(240,244,250); doc.rect(lm,y,rm-lm,20,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(100,100,100);
+  doc.text('EMPLOYEE',lm+6,y+13); doc.text('TOTAL',lm+200,y+13);
+  cos.slice(0,3).forEach((c,i)=>doc.text(c.name.slice(0,14),lm+260+i*90,y+13));
+  doc.text('STATUS',rm-8,y+13,{align:'right'});
+  y+=20; doc.setFillColor(210,220,235); doc.rect(lm,y,rm-lm,.5,'F'); y+=8;
+
+  allUsers.forEach((u,idx)=>{
+    const d=td[u.name]||{segments:[],notes:[]};
+    const {work,byCo}=calcSegs(d.segments);
+    const stD=isClockedOut(d.segments)?'Done':({working:'Working',break:'Break',lunch:'Lunch',out:'Out',idle:'Working'}[getStatus(d.segments)]||'Out');
+    if(idx%2===0){doc.setFillColor(250,251,253);doc.rect(lm,y-3,rm-lm,16,'F');}
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(30,30,30);
+    doc.text(u.name+(u.isManager?' (Mgr)':''),lm+6,y+8);
+    doc.setFont('helvetica','bold'); doc.setTextColor(59,109,17); doc.text(durH(work),lm+200,y+8);
+    cos.slice(0,3).forEach((c,i)=>{doc.setTextColor(80,80,80);doc.setFont('helvetica','normal');doc.text(byCo[c.id]>0?durH(byCo[c.id]):'—',lm+260+i*90,y+8);});
+    doc.setTextColor(100,100,100); doc.text(stD,rm-8,y+8,{align:'right'});
+    y+=16; if(y>720){doc.addPage();y=48;}
+  });
+  y+=14; pdfFoot(doc, y, 'Mgr: '+MANAGER.name);
+  doc.save(`team-timesheet-${todayKey()}.pdf`);
+}
+
+// Team range PDF (week/biweek/month) — one page per employee with daily totals
+function exportTeamRangePDF(range) {
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const allUsers=[...getRoster(),MANAGER];
+  const r = buildReport(range, todayKey());
+  const titles={weekly:'Weekly',biweekly:'Biweekly',monthly:'Monthly'};
+  const lm=40,rm=572; let y=pdfHead(doc, 'Team Timesheet — '+titles[range], r.label);
+
+  // Summary box
+  doc.setFillColor(240,244,250); doc.roundedRect(lm,y,rm-lm,42,4,4,'F');
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,100,100);
+  doc.text('Total team hours',lm+12,y+13); doc.text('Days tracked',lm+200,y+13);
+  doc.setFont('helvetica','bold'); doc.setFontSize(18);
+  doc.setTextColor(59,109,17); doc.text(durH(r.totalWork),lm+12,y+33);
+  doc.setTextColor(20,20,20); doc.text(String(r.days),lm+200,y+33);
+  y+=54;
+
+  // Header
+  doc.setFillColor(240,244,250); doc.rect(lm,y,rm-lm,20,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(100,100,100);
+  doc.text('EMPLOYEE',lm+6,y+13);
+  doc.text('TOTAL',rm-8,y+13,{align:'right'});
+  y+=20; doc.setFillColor(210,220,235); doc.rect(lm,y,rm-lm,.5,'F'); y+=8;
+
+  allUsers.filter(u=>r.byEmp[u.name]>0).forEach((u,idx)=>{
+    if(idx%2===0){doc.setFillColor(250,251,253);doc.rect(lm,y-3,rm-lm,16,'F');}
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(30,30,30);
+    doc.text(u.name+(u.isManager?' (Mgr)':''),lm+6,y+8);
+    doc.setFont('helvetica','bold'); doc.setTextColor(59,109,17);
+    doc.text(durH(r.byEmp[u.name]), rm-8, y+8, {align:'right'});
+    y+=16; if(y>720){doc.addPage();y=48;}
+  });
+
+  // Add a second section: per employee, per day matrix (only if reasonable size)
+  y+=20;
+  if (r.dates.length<=14) {
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20); doc.text('Daily breakdown',lm,y); y+=4;
+    doc.setFillColor(24,95,165); doc.rect(lm,y,rm-lm,1,'F'); y+=14;
+    const s = getStore();
+    allUsers.filter(u=>r.byEmp[u.name]>0).forEach(u=>{
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20,20,20);
+      doc.text(u.name, lm, y); y+=12;
+      r.dates.forEach(date=>{
+        const dd = (s[date]||{})[u.name] || {segments:[]};
+        const {work} = calcSegs(dd.segments);
+        if (work<=0) return;
+        doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(80,80,80);
+        doc.text('  '+fmtDate(date), lm, y);
+        doc.text(durH(work), rm, y, {align:'right'});
+        y+=11;
+        if(y>730){doc.addPage();y=48;}
+      });
+      y+=6;
+    });
+  }
+
+  y+=14; pdfFoot(doc, y, 'Mgr: '+MANAGER.name);
+  doc.save(`team-timesheet-${range}-${todayKey()}.pdf`);
+}
+
+function exportReportPDF() {
+  // Generic report export from reports tab
+  exportTeamRangePDF(A.rRange==='daily'?'weekly':A.rRange);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════════════════
+render();
+
+// Register service worker for offline + install-as-app behavior.
+// Falls back gracefully if served from file:// or if SW unsupported.
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW registration failed:', err));
+  });
+}
+
+</script>
+</body>
+</html>
