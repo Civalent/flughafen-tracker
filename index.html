@@ -11,6 +11,8 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <style>
 :root {
   --bg: #f2f2f7; --bg2: #ffffff; --bg3: #e5e5ea;
@@ -134,10 +136,51 @@ const K = {
   notified:'fpm_notified' // per-day fired tracker
 };
 
-const ls = {
-  get: k => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){ console.warn('LS write failed (quota?):', e); } }
+// ── Phase 3: shared real-time storage via Firestore ──────────
+// All devices read/write one shared database, so the manager sees
+// every crew member's clock-ins live. Works offline (IndexedDB cache)
+// and syncs when back online.
+const firebaseConfig = {
+  apiKey: "AIzaSyDd8GJ2_wSmVi5R88_CCjrIO-aZ9imWVNQ",
+  authDomain: "jobsite--pm.firebaseapp.com",
+  projectId: "jobsite--pm",
+  storageBucket: "jobsite--pm.firebasestorage.app",
+  messagingSenderId: "888979664779",
+  appId: "1:888979664779:web:b88d22580c77e99f2b098e"
 };
+firebase.initializeApp(firebaseConfig);
+const FDB = firebase.firestore();
+const FCOL = 'flughafen_tracker';          // isolated from JobSite PM collections
+try { FDB.enablePersistence({ synchronizeTabs: true }).catch(()=>{}); } catch(e){}
+
+const DATA = {};                            // in-memory mirror of the shared store
+const FKEYS = [K.roster, K.store, K.companies, K.jobs, K.issues, K.reminders, K.notified];
+
+const ls = {
+  get: k => (k in DATA ? DATA[k] : null),
+  set: (k, v) => {
+    DATA[k] = v;
+    FDB.collection(FCOL).doc(k).set({ value: v })
+      .catch(e => console.warn('Firestore write failed:', k, e));
+  }
+};
+
+// Load every key once, then keep them live with real-time listeners.
+async function initData() {
+  await Promise.all(FKEYS.map(async k => {
+    try { const s = await FDB.collection(FCOL).doc(k).get(); if (s.exists) DATA[k] = s.data().value; }
+    catch (e) { console.warn('Firestore read failed:', k, e); }
+  }));
+  FKEYS.forEach(k => {
+    FDB.collection(FCOL).doc(k).onSnapshot(s => {
+      if (!s.exists) return;
+      DATA[k] = s.data().value;
+      // Re-render on remote changes, but don't yank away an open modal.
+      const modal = document.getElementById('modal-root');
+      if (A.user && (!modal || !modal.innerHTML)) { try { render(); } catch(e){} }
+    }, e => console.warn('Firestore listen failed:', k, e));
+  });
+}
 
 // ── Defaults ───────────────────────────────────────────────
 function defaultRoster() {
@@ -1830,7 +1873,8 @@ function exportReportPDF() {
 // ══════════════════════════════════════════════════════════════
 //  BOOT
 // ══════════════════════════════════════════════════════════════
-render();
+document.getElementById('app').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--text2);font-size:14px">Loading…</div>';
+initData().then(render).catch(err => { console.error('Init failed, starting anyway:', err); render(); });
 
 // Register service worker for offline + install-as-app behavior.
 // Falls back gracefully if served from file:// or if SW unsupported.
