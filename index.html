@@ -213,8 +213,6 @@ function defaultReminders() {
   return {
     enabled:false,
     clockIn:'07:00',
-    breakAt:'10:00',
-    lunchAt:'12:00',
     clockOut:'17:00',
     smsBackend:'', // future Firebase Function URL
   };
@@ -360,7 +358,7 @@ function checkReminders() {
   if (!r.enabled || !A.user || A.user.isManager) return;
   const now = new Date();
   const hhmm = p2(now.getHours()) + ':' + p2(now.getMinutes());
-  const slots = [['clockIn','Time to clock in 🕐'], ['breakAt','Time for your break ☕'], ['lunchAt','Time for lunch 🍽️'], ['clockOut','Time to clock out ✅']];
+  const slots = [['clockIn','Time to clock in 🕐'], ['clockOut','Time to clock out ✅']];
   slots.forEach(([k, msg]) => {
     if (r[k] !== hhmm) return;
     const key = todayKey() + ':' + k + ':' + A.user.name;
@@ -1149,14 +1147,6 @@ function mgrReminders() {
           <input type="time" id="rem-clockIn" value="${r.clockIn}">
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Break time</label>
-          <input type="time" id="rem-breakAt" value="${r.breakAt}">
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Lunch time</label>
-          <input type="time" id="rem-lunchAt" value="${r.lunchAt}">
-        </div>
-        <div>
           <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Clock-out time</label>
           <input type="time" id="rem-clockOut" value="${r.clockOut}">
         </div>
@@ -1179,8 +1169,6 @@ function saveReminders() {
   const r = {
     enabled: document.getElementById('rem-enabled').checked,
     clockIn: document.getElementById('rem-clockIn').value,
-    breakAt: document.getElementById('rem-breakAt').value,
-    lunchAt: document.getElementById('rem-lunchAt').value,
     clockOut: document.getElementById('rem-clockOut').value,
     smsBackend: document.getElementById('rem-backend').value.trim(),
   };
