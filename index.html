@@ -356,6 +356,8 @@ function startReminderCheck() {
 function checkReminders() {
   const r = getReminders();
   if (!r.enabled || !A.user || A.user.isManager) return;
+  const me = getRoster().find(u => u.id === A.user.id);
+  if (me && me.remind === false) return; // manager excluded this employee from reminders
   const now = new Date();
   const hhmm = p2(now.getHours()) + ':' + p2(now.getMinutes());
   const slots = [['clockIn','Time to clock in 🕐'], ['clockOut','Time to clock out ✅']];
@@ -1157,12 +1159,34 @@ function mgrReminders() {
     </div>
 
     <div class="card">
+      <div class="slabel">WHO GETS REMINDERS</div>
+      <p style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:10px">
+        Only checked employees receive reminders (notification, text, or email). Changes save automatically.
+      </p>
+      ${getRoster().map(u=>`
+        <label class="row" style="cursor:pointer;gap:10px">
+          <input type="checkbox" ${u.remind===false?'':'checked'} onchange="toggleRemind('${u.id}', this.checked)" style="width:17px;height:17px;cursor:pointer;flex-shrink:0">
+          ${avatarHTML(u, 28)}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500">${u.name}</div>
+            <div style="font-size:11px;color:var(--text2)">${u.phone||u.email||'no phone/email on record'}</div>
+          </div>
+        </label>`).join('')}
+    </div>
+
+    <div class="card">
       <div class="slabel">FUTURE: SMS / EMAIL BACKEND</div>
       <p style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:10px">
         Paste your Firebase Function URL here. When set, the app will POST to it with <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">{employee, message, phone, email}</code> at scheduled times. Your function then calls Twilio (SMS) or SendGrid (email). Until then, only browser notifications fire.
       </p>
       <input type="text" id="rem-backend" value="${r.smsBackend||''}" placeholder="https://us-central1-your-project.cloudfunctions.net/sendReminder">
     </div>`;
+}
+
+function toggleRemind(id, on) {
+  const roster = getRoster();
+  const u = roster.find(x => x.id === id);
+  if (u) { u.remind = on; saveRoster(roster); }
 }
 
 function saveReminders() {
