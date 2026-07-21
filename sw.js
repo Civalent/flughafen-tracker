@@ -1,7 +1,7 @@
 // Flughafen PM — Service Worker
 // Caches the app so it loads instantly offline and behaves like a native app.
 
-const CACHE = 'fpm-tracker-v2.1';
+const CACHE = 'fpm-tracker-v2.2';
 const CORE = [
   './',
   './index.html',
