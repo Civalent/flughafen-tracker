@@ -231,7 +231,7 @@ const saveRem      = r => ls.set(K.reminders, r);
 const getStore     = () => ls.get(K.store) || {};
 const saveStore    = s => ls.set(K.store, s);
 
-function todayKey() { return new Date().toISOString().slice(0,10); }
+function todayKey() { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); } // local date, not UTC
 
 function getUserDay(name, date) {
   const s = getStore(), k = date || todayKey();
