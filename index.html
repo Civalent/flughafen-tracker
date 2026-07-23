@@ -133,7 +133,8 @@ const MANAGER = {id:'mgr', name:'Vanessa Gamboa', pin:'7620', initials:'VG', c:'
 const K = {
   roster:'fpm_roster', store:'fpm_store', companies:'fpm_companies',
   jobs:'fpm_jobs', issues:'fpm_issues', reminders:'fpm_reminders',
-  notified:'fpm_notified' // per-day fired tracker
+  notified:'fpm_notified', // per-day fired tracker
+  benefits:'fpm_benefits'  // PTO requests + sick days per employee
 };
 
 // ── Phase 3: shared real-time storage via Firestore ──────────
@@ -154,7 +155,7 @@ const FCOL = 'flughafen_tracker';          // isolated from JobSite PM collectio
 try { FDB.enablePersistence({ synchronizeTabs: true }).catch(()=>{}); } catch(e){}
 
 const DATA = {};                            // in-memory mirror of the shared store
-const FKEYS = [K.roster, K.store, K.companies, K.jobs, K.issues, K.reminders, K.notified];
+const FKEYS = [K.roster, K.store, K.companies, K.jobs, K.issues, K.reminders, K.notified, K.benefits];
 
 const ls = {
   get: k => (k in DATA ? DATA[k] : null),
@@ -230,6 +231,95 @@ const saveIssues   = i => ls.set(K.issues, i);
 const saveRem      = r => ls.set(K.reminders, r);
 const getStore     = () => ls.get(K.store) || {};
 const saveStore    = s => ls.set(K.store, s);
+
+// ── Benefits: PTO / Sick / Holidays ─────────────────────────
+const getBenefits  = () => ls.get(K.benefits) || {};
+const saveBenefits = b => ls.set(K.benefits, b);
+function empBenefits(name) {
+  const b = getBenefits();
+  if (!b[name]) b[name] = { pto:[], sick:[], carryover:0 };
+  if (!b[name].pto) b[name].pto = [];
+  if (!b[name].sick) b[name].sick = [];
+  if (b[name].carryover == null) b[name].carryover = 0;
+  return b[name];
+}
+// Paid company holidays for a given year → array of {date:'YYYY-MM-DD', name}
+function holidaysForYear(y) {
+  const iso = (mo,da)=>`${y}-${p2(mo)}-${p2(da)}`;
+  // nth weekday of a month (weekday: 0=Sun..6=Sat)
+  function nthWeekday(month, weekday, n){ let count=0; for(let d=1;d<=31;d++){ const dt=new Date(y,month-1,d); if(dt.getMonth()!==month-1) break; if(dt.getDay()===weekday){ count++; if(count===n) return d; } } return null; }
+  const laborDay = nthWeekday(9, 1, 1);          // 1st Monday of Sept
+  const thanksgiving = nthWeekday(11, 4, 4);      // 4th Thursday of Nov
+  const dayAfterTg = thanksgiving+1;
+  return [
+    {date:iso(7,4),  name:'Independence Day'},
+    {date:iso(9,laborDay), name:'Labor Day'},
+    {date:iso(11,thanksgiving), name:'Thanksgiving'},
+    {date:iso(11,dayAfterTg),   name:'Day after Thanksgiving'},
+    {date:iso(12,24), name:'Christmas Eve'},
+    {date:iso(12,25), name:'Christmas Day'},
+    {date:iso(12,31), name:"New Year's Eve"},
+  ];
+}
+function isHoliday(iso){ const y=+iso.slice(0,4); return holidaysForYear(y).find(h=>h.date===iso)||null; }
+// Tenure in whole years from startDate to now
+function tenureYears(u) {
+  if (!u || !u.startDate) return 0;
+  const start = new Date(u.startDate + 'T00:00:00'); if (isNaN(start)) return 0;
+  const now = new Date();
+  let yrs = now.getFullYear() - start.getFullYear();
+  const m = now.getMonth() - start.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < start.getDate())) yrs--;
+  return Math.max(0, yrs);
+}
+// Annual PTO entitlement by tenure (admin override wins)
+function ptoEntitlement(u) {
+  if (u && u.benefitsOff) return 0;
+  if (u && u.ptoOverride != null && u.ptoOverride !== '') return +u.ptoOverride;
+  const t = tenureYears(u);
+  if (t <= 2) return 10;
+  if (t <= 5) return 15;
+  return 20;
+}
+const SICK_PER_YEAR = 5;
+const WORK_DAYS_PER_YEAR = 260; // for per-day accrual rate
+// Count distinct days worked in a given year (has a work segment)
+function daysWorkedInYear(name, year) {
+  const s = getStore();
+  let n = 0;
+  for (const dk in s) {
+    if (dk.slice(0,4) !== String(year)) continue;
+    const day = s[dk][name];
+    if (day && day.segments && day.segments.some(x=>x.type==='work')) n++;
+  }
+  return n;
+}
+// Full PTO/sick picture for an employee for the current year
+function benefitSummary(u) {
+  const name = u.name;
+  const year = new Date().getFullYear();
+  const b = empBenefits(name);
+  const entitlement = ptoEntitlement(u);
+  const dailyRate = entitlement / WORK_DAYS_PER_YEAR;
+  const worked = daysWorkedInYear(name, year);
+  const accrued = +(worked * dailyRate).toFixed(2);
+  const carryover = +(b.carryover||0);
+  const usedPto = b.pto.filter(r=>r.status==='approved' && (+String(r.from).slice(0,4)===year)).reduce((a,r)=>a+(+r.days||0),0);
+  const pendingPto = b.pto.filter(r=>r.status==='pending').reduce((a,r)=>a+(+r.days||0),0);
+  const ptoAvailable = +(carryover + accrued - usedPto).toFixed(2);
+  const sickAllowed = (u.benefitsOff?0:(u.sickOverride!=null&&u.sickOverride!==''?+u.sickOverride:SICK_PER_YEAR));
+  const usedSick = b.sick.filter(s=>+String(s.date).slice(0,4)===year).length;
+  const sickAvailable = Math.max(0, sickAllowed - usedSick);
+  return { entitlement, accrued, carryover, usedPto, pendingPto, ptoAvailable, sickAllowed, usedSick, sickAvailable, tenure:tenureYears(u), worked };
+}
+// count weekdays between two ISO dates inclusive (business days requested)
+function businessDaysBetween(fromIso, toIso) {
+  const a = new Date(fromIso+'T00:00:00'), b = new Date(toIso+'T00:00:00');
+  if (isNaN(a)||isNaN(b)||b<a) return 0;
+  let n=0; const d=new Date(a);
+  while (d<=b) { const wd=d.getDay(); if(wd!==0&&wd!==6) n++; d.setDate(d.getDate()+1); }
+  return n;
+}
 
 function todayKey() { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); } // local date, not UTC
 
@@ -664,6 +754,8 @@ function pageEmployee() {
       <div id="notes-list">${taskHTML}</div>
     </div>
 
+    ${empTimeOffCard(u)}
+
     <div class="card">
       <div class="slabel">Today's log</div>
       ${segLog}
@@ -813,6 +905,99 @@ function saveTaskEdit(i) {
   render();
 }
 
+// ── Employee: Time off (PTO / sick / holidays) ──────────────
+function empTimeOffCard(u) {
+  const roster = getRoster();
+  const full = roster.find(r=>r.name===u.name) || u;
+  if (full.benefitsOff) return '';
+  const bs = benefitSummary(full);
+  const b = empBenefits(u.name);
+  const year = new Date().getFullYear();
+  const upcoming = holidaysForYear(year).filter(h=>h.date>=todayKey()).slice(0,3);
+  const myReqs = [...b.pto].filter(r=>+String(r.from).slice(0,4)===year).sort((a,c)=>a.from<c.from?1:-1).slice(0,4);
+  const reqHTML = myReqs.length? myReqs.map(r=>{
+    const col = r.status==='approved'?'var(--green)':r.status==='denied'?'#A32D2D':'var(--orange)';
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 0">
+      <span style="flex:1">${fmtDate(r.from)}${r.to!==r.from?' → '+fmtDate(r.to):''} · ${r.days}d</span>
+      <span style="color:${col};font-weight:600;text-transform:capitalize">${r.status}</span>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--text3)">No PTO requests yet.</div>';
+  return `<div class="card">
+    <div class="slabel">Time off</div>
+    <div class="metrics" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:10px">
+      <div class="metric"><div class="metric-label">PTO available</div><div class="metric-value" style="color:var(--green)">${bs.ptoAvailable}<span style="font-size:12px">d</span></div></div>
+      <div class="metric"><div class="metric-label">Sick left</div><div class="metric-value" style="color:var(--blue)">${bs.sickAvailable}<span style="font-size:12px">d</span></div></div>
+      <div class="metric"><div class="metric-label">Tenure</div><div class="metric-value">${bs.tenure}<span style="font-size:12px">y</span></div></div>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Earned ${bs.accrued}d of ${bs.entitlement}d/yr so far${bs.carryover?` · ${bs.carryover}d carried over`:''}${bs.pendingPto?` · ${bs.pendingPto}d pending approval`:''}.</div>
+    <div style="display:flex;gap:7px;margin-bottom:10px">
+      <button class="btn btn-green" style="flex:1;justify-content:center;font-size:12px" onclick="showPtoRequestModal()">Request PTO</button>
+      <button class="btn btn-ghost" style="flex:1;justify-content:center;font-size:12px" onclick="showSickModal()">Log sick day</button>
+    </div>
+    <div style="border-top:.5px solid var(--border2);padding-top:8px">${reqHTML}</div>
+    ${upcoming.length?`<div style="border-top:.5px solid var(--border2);padding-top:8px;margin-top:8px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Upcoming paid holidays</div>
+      ${upcoming.map(h=>`<div style="font-size:12px;color:var(--text2)">🎉 ${fmtDate(h.date)} — ${h.name}</div>`).join('')}
+    </div>`:''}
+  </div>`;
+}
+function showPtoRequestModal() {
+  const t = todayKey();
+  showModal(`<div class="modal">
+    <div class="modal-title">Request PTO</div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">From</label>
+    <input id="pto-from" type="date" value="${t}" style="margin-bottom:10px" onchange="ptoRecalcDays()">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">To</label>
+    <input id="pto-to" type="date" value="${t}" style="margin-bottom:10px" onchange="ptoRecalcDays()">
+    <div id="pto-days" style="font-size:12px;color:var(--teal);font-weight:600;margin-bottom:10px">1 business day</div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Reason (optional)</label>
+    <input id="pto-reason" type="text" placeholder="e.g. Family trip" style="margin-bottom:14px">
+    <div id="pto-err" style="font-size:12px;color:#A32D2D;min-height:15px;margin-bottom:6px"></div>
+    <button class="btn btn-primary btn-full" onclick="submitPtoRequest()">Submit request</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+function ptoRecalcDays() {
+  const f=document.getElementById('pto-from')?.value, t=document.getElementById('pto-to')?.value;
+  const d=businessDaysBetween(f,t);
+  const el=document.getElementById('pto-days'); if(el) el.textContent = d+' business day'+(d===1?'':'s');
+}
+function submitPtoRequest() {
+  const from=document.getElementById('pto-from')?.value, to=document.getElementById('pto-to')?.value;
+  const reason=(document.getElementById('pto-reason')?.value||'').trim();
+  const err=document.getElementById('pto-err');
+  if(!from||!to){err.textContent='Pick both dates.';return;}
+  if(to<from){err.textContent='End date is before start.';return;}
+  const days=businessDaysBetween(from,to);
+  if(days<1){err.textContent='Range has no business days.';return;}
+  const b=getBenefits(); const eb=empBenefits(A.user.name); b[A.user.name]=eb;
+  eb.pto.push({id:Date.now().toString(), from, to, days, reason, status:'pending', ts:Date.now()});
+  saveBenefits(b); closeModal(); render();
+}
+function showSickModal() {
+  const t = todayKey();
+  showModal(`<div class="modal">
+    <div class="modal-title">Log sick day</div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Date</label>
+    <input id="sick-date" type="date" value="${t}" style="margin-bottom:10px">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Note (optional)</label>
+    <input id="sick-note" type="text" placeholder="e.g. Flu" style="margin-bottom:14px">
+    <div id="sick-err" style="font-size:12px;color:#A32D2D;min-height:15px;margin-bottom:6px"></div>
+    <button class="btn btn-primary btn-full" onclick="logSickDay()">Log sick day</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+function logSickDay() {
+  const date=document.getElementById('sick-date')?.value;
+  const note=(document.getElementById('sick-note')?.value||'').trim();
+  const err=document.getElementById('sick-err');
+  if(!date){err.textContent='Pick a date.';return;}
+  const b=getBenefits(); const eb=empBenefits(A.user.name); b[A.user.name]=eb;
+  if(eb.sick.some(s=>s.date===date)){err.textContent='Already logged for that date.';return;}
+  eb.sick.push({date, note, by:'emp', ts:Date.now()});
+  saveBenefits(b); closeModal(); render();
+}
+
 // ══════════════════════════════════════════════════════════════
 //  MANAGER PAGE
 // ══════════════════════════════════════════════════════════════
@@ -840,6 +1025,7 @@ function pageManager() {
         ['team','Team'],
         ['jobs','Jobs'],
         ['companies','Companies'],
+        ['timeoff', 'Time off' + (pendingPtoCount()?` <span class="badge">${pendingPtoCount()}</span>`:'')],
         ['issues', 'Issues' + (issueCount?` <span class="badge">${issueCount}</span>`:'')],
         ['reminders','Reminders'],
       ].map(([id,lbl])=>`<button class="tab${A.mTab===id?' on':''}" onclick="setMTab('${id}')">${lbl}</button>`).join('')}
@@ -856,7 +1042,13 @@ function mgrContent() {
   if (A.mTab==='companies') return mgrCompanies();
   if (A.mTab==='issues')    return mgrIssues();
   if (A.mTab==='reminders') return mgrReminders();
+  if (A.mTab==='timeoff')   return mgrTimeOff();
   return '';
+}
+
+function pendingPtoCount() {
+  const b = getBenefits();
+  return Object.values(b).reduce((a,e)=>a+((e.pto||[]).filter(r=>r.status==='pending').length),0);
 }
 
 function setMTab(t) { A.mTab=t; render(); }
@@ -1287,6 +1479,141 @@ function toggleRemind(id, on) {
   const roster = getRoster();
   const u = roster.find(x => x.id === id);
   if (u) { u.remind = on; saveRoster(roster); }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MGR — TIME OFF (PTO / Sick / Holidays)
+// ══════════════════════════════════════════════════════════════
+function mgrTimeOff() {
+  const roster = getRoster();
+  const b = getBenefits();
+  const year = new Date().getFullYear();
+
+  // Pending PTO requests across all employees
+  const pending = [];
+  roster.forEach(u => (empBenefits(u.name).pto||[]).forEach((r,idx)=>{ if(r.status==='pending') pending.push({u, r, idx}); }));
+  const pendingHTML = pending.length ? pending.map(({u,r,idx})=>`
+    <div style="padding:9px 0;border-bottom:.5px solid var(--border2)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        ${avatarHTML(u,26)}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500">${u.name}</div>
+          <div style="font-size:11px;color:var(--text2)">${fmtDate(r.from)}${r.to!==r.from?' → '+fmtDate(r.to):''} · ${r.days} day${r.days===1?'':'s'}${r.reason?' · '+r.reason:''}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:7px">
+        <button class="btn btn-green" style="flex:1;justify-content:center;font-size:12px;padding:6px" onclick="approvePto('${u.name.replace(/'/g,"\\'")}','${r.id}')">Approve</button>
+        <button class="btn btn-red" style="flex:1;justify-content:center;font-size:12px;padding:6px" onclick="denyPto('${u.name.replace(/'/g,"\\'")}','${r.id}')">Deny</button>
+      </div>
+    </div>`).join('') : '<p style="font-size:13px;color:var(--text3)">No pending requests.</p>';
+
+  // Balances per employee
+  const balHTML = roster.map(u=>{
+    const bs = benefitSummary(u);
+    const off = u.benefitsOff;
+    return `<div style="padding:9px 0;border-bottom:.5px solid var(--border2)">
+      <div style="display:flex;align-items:center;gap:8px">
+        ${avatarHTML(u,28)}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500">${u.name}${off?' <span style="font-size:9px;color:#A32D2D;font-weight:700">BENEFITS OFF</span>':''}</div>
+          <div style="font-size:11px;color:var(--text2)">${u.startDate?('Started '+fmtDate(u.startDate)+' · '+bs.tenure+'y'):'No start date set'}</div>
+        </div>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="showEditBenefitsModal('${u.id}')">Edit</button>
+      </div>
+      ${off?'':`<div style="display:flex;gap:12px;margin-top:6px;padding-left:36px;flex-wrap:wrap">
+        <span style="font-size:12px"><b style="color:var(--green)">${bs.ptoAvailable}d</b> PTO<span style="color:var(--text3)"> (${bs.accrued}/${bs.entitlement} earned)</span></span>
+        <span style="font-size:12px"><b style="color:var(--blue)">${bs.sickAvailable}d</b> sick<span style="color:var(--text3)"> (${bs.usedSick}/${bs.sickAllowed} used)</span></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 7px" onclick="showAdminSickModal('${u.id}')">+ Sick day</button>
+      </div>`}
+    </div>`;
+  }).join('');
+
+  const holHTML = holidaysForYear(year).map(h=>`
+    <div style="display:flex;gap:8px;font-size:13px;padding:6px 0;border-bottom:.5px solid var(--border2)">
+      <span style="flex:1">${h.name}</span>
+      <span style="color:var(--text2)">${fmtDate(h.date)}</span>
+    </div>`).join('');
+
+  return `
+    <div class="card">
+      <div class="slabel">PENDING PTO REQUESTS${pending.length?` <span class="badge">${pending.length}</span>`:''}</div>
+      ${pendingHTML}
+    </div>
+    <div class="card">
+      <div class="slabel">EMPLOYEE BALANCES (${year})</div>
+      ${balHTML}
+    </div>
+    <div class="card">
+      <div class="slabel">PAID COMPANY HOLIDAYS (${year})</div>
+      ${holHTML}
+    </div>`;
+}
+function approvePto(name, id) {
+  const b=getBenefits(); const eb=empBenefits(name); b[name]=eb;
+  const r=eb.pto.find(x=>x.id===id); if(r){ r.status='approved'; r.decidedTs=Date.now(); }
+  saveBenefits(b); render();
+}
+function denyPto(name, id) {
+  const b=getBenefits(); const eb=empBenefits(name); b[name]=eb;
+  const r=eb.pto.find(x=>x.id===id); if(r){ r.status='denied'; r.decidedTs=Date.now(); }
+  saveBenefits(b); render();
+}
+function showAdminSickModal(empId) {
+  const u=getRoster().find(r=>r.id===empId); if(!u) return;
+  const t=todayKey();
+  showModal(`<div class="modal">
+    <div class="modal-title">Log sick day — ${u.name}</div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Date</label>
+    <input id="asick-date" type="date" value="${t}" style="margin-bottom:10px">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Note (optional)</label>
+    <input id="asick-note" type="text" placeholder="e.g. Called in sick" style="margin-bottom:14px">
+    <div id="asick-err" style="font-size:12px;color:#A32D2D;min-height:15px;margin-bottom:6px"></div>
+    <button class="btn btn-primary btn-full" onclick="adminAddSick('${u.name.replace(/'/g,"\\'")}')">Log sick day</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+function adminAddSick(name) {
+  const date=document.getElementById('asick-date')?.value;
+  const note=(document.getElementById('asick-note')?.value||'').trim();
+  const err=document.getElementById('asick-err');
+  if(!date){err.textContent='Pick a date.';return;}
+  const b=getBenefits(); const eb=empBenefits(name); b[name]=eb;
+  if(eb.sick.some(s=>s.date===date)){err.textContent='Already logged for that date.';return;}
+  eb.sick.push({date, note, by:'admin', ts:Date.now()});
+  saveBenefits(b); closeModal(); render();
+}
+function showEditBenefitsModal(empId) {
+  const u=getRoster().find(r=>r.id===empId); if(!u) return;
+  const bs=benefitSummary(u); const eb=empBenefits(u.name);
+  showModal(`<div class="modal">
+    <div class="modal-title">Benefits — ${u.name}</div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Employment start date</label>
+    <input id="eb-start" type="date" value="${u.startDate||''}" style="margin-bottom:10px">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/year override <span style="color:var(--text3)">(blank = auto by tenure: ${ptoEntitlement({startDate:u.startDate})}d)</span></label>
+    <input id="eb-pto" type="number" min="0" step="1" value="${u.ptoOverride!=null?u.ptoOverride:''}" placeholder="auto" style="margin-bottom:10px">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Sick days/year override <span style="color:var(--text3)">(blank = ${SICK_PER_YEAR})</span></label>
+    <input id="eb-sick" type="number" min="0" step="1" value="${u.sickOverride!=null?u.sickOverride:''}" placeholder="${SICK_PER_YEAR}" style="margin-bottom:10px">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO carried over from prior years (days)</label>
+    <input id="eb-carry" type="number" min="0" step="0.5" value="${eb.carryover||0}" style="margin-bottom:12px">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;margin-bottom:14px">
+      <input id="eb-off" type="checkbox" ${u.benefitsOff?'checked':''} style="width:16px;height:16px">
+      Disable all benefits for this employee
+    </label>
+    <button class="btn btn-primary btn-full" onclick="saveBenefitsEdit('${empId}')">Save</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+function saveBenefitsEdit(empId) {
+  const roster=getRoster(); const idx=roster.findIndex(r=>r.id===empId); if(idx===-1) return;
+  const u=roster[idx];
+  u.startDate=(document.getElementById('eb-start')?.value||'').trim();
+  const pto=document.getElementById('eb-pto')?.value; u.ptoOverride = (pto===''?null:+pto);
+  const sick=document.getElementById('eb-sick')?.value; u.sickOverride = (sick===''?null:+sick);
+  u.benefitsOff=document.getElementById('eb-off')?.checked||false;
+  saveRoster(roster);
+  const carry=+(document.getElementById('eb-carry')?.value||0);
+  const b=getBenefits(); const eb=empBenefits(u.name); eb.carryover=carry; b[u.name]=eb; saveBenefits(b);
+  closeModal(); render();
 }
 
 function saveReminders() {
