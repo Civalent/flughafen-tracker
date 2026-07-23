@@ -679,7 +679,7 @@ function pageEmployee() {
     ? '<p style="font-size:13px;color:var(--text3)">No activity yet.</p>'
     : segs.filter(s=>s.type!=='clockout').map(s => {
         const co = cos.find(c=>c.id===s.companyId);
-        const job = jobs.find(j=>j.id===s.jobId) || getJobs().find(j=>j.id===s.jobId);
+        const job = getJobs().find(j=>j.id===s.jobId);
         const label = {work:'Work', break:'Break', lunch:'Lunch'}[s.type] || s.type;
         const dur = s.endTs ? durMs(s.endTs - s.startTs) : '<span style="color:var(--teal);font-weight:500">ongoing</span>';
         return `<div class="seg-row">
