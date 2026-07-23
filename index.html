@@ -2642,11 +2642,13 @@ function exportTeamDayPDF(dateArg, includeNames) {
   const date=fmtDateLong(dateKey);
   const lm=40,rm=572; let y=pdfHead(doc, dateKey===todayKey()?'Team Timesheet — Today':'Team Timesheet — Day', date);
 
+  const coX = i => lm+215+i*70;          // narrower company columns so they never reach STATUS
   doc.setFillColor(240,244,250); doc.rect(lm,y,rm-lm,20,'F');
   doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(100,100,100);
-  doc.text('EMPLOYEE',lm+6,y+13); doc.text('TOTAL',lm+200,y+13);
-  cos.slice(0,3).forEach((c,i)=>doc.text(c.name.slice(0,14),lm+260+i*90,y+13));
-  doc.text('STATUS',rm-8,y+13,{align:'right'});
+  doc.text('EMPLOYEE',lm+6,y+13); doc.text('TOTAL',lm+165,y+13);
+  doc.setFontSize(8);
+  cos.slice(0,3).forEach((c,i)=>doc.text(c.name.slice(0,9),coX(i),y+13));
+  doc.setFontSize(9); doc.text('STATUS',rm-8,y+13,{align:'right'});
   y+=20; doc.setFillColor(210,220,235); doc.rect(lm,y,rm-lm,.5,'F'); y+=8;
 
   allUsers.forEach((u,idx)=>{
@@ -2656,11 +2658,31 @@ function exportTeamDayPDF(dateArg, includeNames) {
     if(idx%2===0){doc.setFillColor(250,251,253);doc.rect(lm,y-3,rm-lm,16,'F');}
     doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(30,30,30);
     doc.text(u.name+(u.isManager?' (Mgr)':''),lm+6,y+8);
-    doc.setFont('helvetica','bold'); doc.setTextColor(59,109,17); doc.text(durH(work),lm+200,y+8);
-    cos.slice(0,3).forEach((c,i)=>{doc.setTextColor(80,80,80);doc.setFont('helvetica','normal');doc.text(byCo[c.id]>0?durH(byCo[c.id]):'—',lm+260+i*90,y+8);});
-    doc.setTextColor(100,100,100); doc.text(stD,rm-8,y+8,{align:'right'});
+    doc.setFont('helvetica','bold'); doc.setTextColor(59,109,17); doc.text(durH(work),lm+165,y+8);
+    doc.setFontSize(8); doc.setFont('helvetica','normal');
+    cos.slice(0,3).forEach((c,i)=>{doc.setTextColor(80,80,80);doc.text(byCo[c.id]>0?durH(byCo[c.id]):'—',coX(i),y+8);});
+    doc.setFontSize(10); doc.setTextColor(100,100,100); doc.text(stD,rm-8,y+8,{align:'right'});
     y+=16; if(y>720){doc.addPage();y=48;}
   });
+
+  // Tasks logged that day, per employee
+  const jobs=getJobs();
+  const withTasks=allUsers.filter(u=>{const d=td[u.name];return d&&d.notes&&d.notes.length;});
+  if(withTasks.length){
+    y+=18; doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20); doc.text('Tasks',lm,y); y+=4;
+    doc.setFillColor(24,95,165); doc.rect(lm,y,rm-lm,1,'F'); y+=14;
+    withTasks.forEach(u=>{
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20,20,20); doc.text(u.name,lm,y); y+=12;
+      [...td[u.name].notes].sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(n=>{
+        const job=jobs.find(j=>j.id===n.jobId);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(80,80,80);
+        const line='  '+(n.ts?fmtTime(n.ts)+'  ':'')+n.text+(n.mins?' ('+n.mins+'m)':'')+(job?'  ['+job.name+']':'');
+        doc.text(line.slice(0,100),lm,y); y+=11; if(y>730){doc.addPage();y=48;}
+      });
+      y+=6;
+    });
+  }
+
   y+=14; pdfFoot(doc, y, 'Mgr: '+MANAGER.name);
   doc.save(`team-timesheet-${dateKey}.pdf`);
 }
@@ -2717,6 +2739,28 @@ function exportTeamRangePDF(range) {
         doc.text(durH(work), rm, y, {align:'right'});
         y+=11;
         if(y>730){doc.addPage();y=48;}
+      });
+      y+=6;
+    });
+  }
+
+  // Tasks across the period, per employee
+  const s2 = getStore(); const jobs2 = getJobs();
+  const empsWithTasks = allUsers.filter(u=>r.byEmp[u.name]>0).map(u=>{
+    const tasks=[];
+    r.dates.forEach(date=>{ const dd=(s2[date]||{})[u.name]; if(dd&&dd.notes) dd.notes.forEach(n=>tasks.push({date, ...n})); });
+    return {u, tasks};
+  }).filter(x=>x.tasks.length);
+  if(empsWithTasks.length){
+    y+=18; doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20); doc.text('Tasks',lm,y); y+=4;
+    doc.setFillColor(24,95,165); doc.rect(lm,y,rm-lm,1,'F'); y+=14;
+    empsWithTasks.forEach(({u,tasks})=>{
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20,20,20); doc.text(u.name,lm,y); y+=12;
+      tasks.sort((a,b)=>(a.date+String(a.ts)).localeCompare(b.date+String(b.ts))).forEach(n=>{
+        const job=jobs2.find(j=>j.id===n.jobId);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(80,80,80);
+        const line='  '+fmtDate(n.date)+' '+(n.ts?fmtTime(n.ts):'')+'  '+n.text+(n.mins?' ('+n.mins+'m)':'')+(job?'  ['+job.name+']':'');
+        doc.text(line.slice(0,105),lm,y); y+=11; if(y>730){doc.addPage();y=48;}
       });
       y+=6;
     });
