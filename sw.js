@@ -1,7 +1,7 @@
 // Flughafen PM — Service Worker
 // Caches the app so it loads instantly offline and behaves like a native app.
 
-const CACHE = 'fpm-tracker-v2.5';
+const CACHE = 'fpm-tracker-v2.6';
 const CORE = [
   './',
   './index.html',
@@ -11,6 +11,9 @@ const CORE = [
   './apple-touch-icon.png',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
 ];
+
+// Allow the page to tell a waiting SW to activate immediately.
+self.addEventListener('message', e => { if (e.data === 'skipWaiting') self.skipWaiting(); });
 
 self.addEventListener('install', e => {
   e.waitUntil(

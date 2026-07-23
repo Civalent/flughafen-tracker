@@ -235,6 +235,10 @@ const saveStore    = s => ls.set(K.store, s);
 // ── Benefits: PTO / Sick / Holidays ─────────────────────────
 const getBenefits  = () => ls.get(K.benefits) || {};
 const saveBenefits = b => ls.set(K.benefits, b);
+// Company-wide benefit RULES, stored under a reserved key in the benefits doc
+function defaultRules(){ return { pto0_2:10, pto3_5:15, pto6plus:20, sickPerYear:5, workDaysPerYear:260 }; }
+function getRules(){ const b=getBenefits(); return Object.assign(defaultRules(), b.__rules||{}); }
+function saveRules(r){ const b=getBenefits(); b.__rules=Object.assign(getRules(), r); saveBenefits(b); }
 function empBenefits(name) {
   const b = getBenefits();
   if (!b[name]) b[name] = { pto:[], sick:[], carryover:0 };
@@ -272,17 +276,18 @@ function tenureYears(u) {
   if (m < 0 || (m === 0 && now.getDate() < start.getDate())) yrs--;
   return Math.max(0, yrs);
 }
-// Annual PTO entitlement by tenure (admin override wins)
+// Annual PTO entitlement by tenure (admin override wins; rules are configurable in Settings)
 function ptoEntitlement(u) {
   if (u && u.benefitsOff) return 0;
   if (u && u.ptoOverride != null && u.ptoOverride !== '') return +u.ptoOverride;
+  const r = getRules();
   const t = tenureYears(u);
-  if (t <= 2) return 10;
-  if (t <= 5) return 15;
-  return 20;
+  if (t <= 2) return +r.pto0_2;
+  if (t <= 5) return +r.pto3_5;
+  return +r.pto6plus;
 }
-const SICK_PER_YEAR = 5;
-const WORK_DAYS_PER_YEAR = 260; // for per-day accrual rate
+function sickPerYear(){ return +getRules().sickPerYear; }
+function workDaysPerYear(){ return +getRules().workDaysPerYear; }
 // Count distinct days worked in a given year (has a work segment)
 function daysWorkedInYear(name, year) {
   const s = getStore();
@@ -300,14 +305,14 @@ function benefitSummary(u) {
   const year = new Date().getFullYear();
   const b = empBenefits(name);
   const entitlement = ptoEntitlement(u);
-  const dailyRate = entitlement / WORK_DAYS_PER_YEAR;
+  const dailyRate = entitlement / workDaysPerYear();
   const worked = daysWorkedInYear(name, year);
   const accrued = +(worked * dailyRate).toFixed(2);
   const carryover = +(b.carryover||0);
   const usedPto = b.pto.filter(r=>r.status==='approved' && (+String(r.from).slice(0,4)===year)).reduce((a,r)=>a+(+r.days||0),0);
   const pendingPto = b.pto.filter(r=>r.status==='pending').reduce((a,r)=>a+(+r.days||0),0);
   const ptoAvailable = +(carryover + accrued - usedPto).toFixed(2);
-  const sickAllowed = (u.benefitsOff?0:(u.sickOverride!=null&&u.sickOverride!==''?+u.sickOverride:SICK_PER_YEAR));
+  const sickAllowed = (u.benefitsOff?0:(u.sickOverride!=null&&u.sickOverride!==''?+u.sickOverride:sickPerYear()));
   const usedSick = b.sick.filter(s=>+String(s.date).slice(0,4)===year).length;
   const sickAvailable = Math.max(0, sickAllowed - usedSick);
   return { entitlement, accrued, carryover, usedPto, pendingPto, ptoAvailable, sickAllowed, usedSick, sickAvailable, tenure:tenureYears(u), worked };
@@ -1027,7 +1032,7 @@ function pageManager() {
         ['companies','Companies'],
         ['timeoff', 'Time off' + (pendingPtoCount()?` <span class="badge">${pendingPtoCount()}</span>`:'')],
         ['issues', 'Issues' + (issueCount?` <span class="badge">${issueCount}</span>`:'')],
-        ['reminders','Reminders'],
+        ['settings','Settings'],
       ].map(([id,lbl])=>`<button class="tab${A.mTab===id?' on':''}" onclick="setMTab('${id}')">${lbl}</button>`).join('')}
     </div>
     <div id="mgr-content">${mgrContent()}</div>
@@ -1041,9 +1046,44 @@ function mgrContent() {
   if (A.mTab==='jobs')      return mgrJobs();
   if (A.mTab==='companies') return mgrCompanies();
   if (A.mTab==='issues')    return mgrIssues();
-  if (A.mTab==='reminders') return mgrReminders();
+  if (A.mTab==='settings')  return mgrSettings();
   if (A.mTab==='timeoff')   return mgrTimeOff();
   return '';
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MGR — SETTINGS (benefit rules + reminders)
+// ══════════════════════════════════════════════════════════════
+function mgrSettings() {
+  const r = getRules();
+  return `
+    <div class="card">
+      <div class="slabel">PTO / BENEFIT RULES</div>
+      <p style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:12px">
+        Company-wide defaults. These apply to everyone unless you set a per-person override in the Time off tab. PTO accrues per day worked; sick days reset each Jan 1; PTO carries over.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/yr · 0–2 years</label><input id="rule-p1" type="number" min="0" step="1" value="${r.pto0_2}"></div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/yr · 3–5 years</label><input id="rule-p2" type="number" min="0" step="1" value="${r.pto3_5}"></div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/yr · 6+ years</label><input id="rule-p3" type="number" min="0" step="1" value="${r.pto6plus}"></div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Sick days per year</label><input id="rule-sick" type="number" min="0" step="1" value="${r.sickPerYear}"></div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Work days/yr (accrual base)</label><input id="rule-wd" type="number" min="1" step="1" value="${r.workDaysPerYear}"></div>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="saveRulesForm()">Save benefit rules</button>
+      <div id="rules-saved" style="font-size:12px;color:var(--green);margin-top:6px;min-height:14px;text-align:center"></div>
+    </div>
+    ${mgrReminders()}`;
+}
+function saveRulesForm() {
+  saveRules({
+    pto0_2:+document.getElementById('rule-p1').value,
+    pto3_5:+document.getElementById('rule-p2').value,
+    pto6plus:+document.getElementById('rule-p3').value,
+    sickPerYear:+document.getElementById('rule-sick').value,
+    workDaysPerYear:Math.max(1,+document.getElementById('rule-wd').value),
+  });
+  const ok=document.getElementById('rules-saved'); if(ok){ok.textContent='✓ Saved';setTimeout(()=>ok.textContent='',2000);}
+  render();
 }
 
 function pendingPtoCount() {
@@ -1184,6 +1224,7 @@ function mgrReports() {
   }).join('');
 
   return `
+    <button class="btn btn-primary btn-full" style="margin-bottom:12px" onclick="showReportBuilder()">📄 Create PDF report</button>
     <div class="range-group">
       ${[['daily','Daily'],['weekly','Weekly'],['biweekly','Biweekly'],['monthly','Monthly']].map(([id,lbl])=>
         `<button class="range-btn${A.rRange===id?' on':''}" onclick="setRRange('${id}')">${lbl}</button>`
@@ -1224,6 +1265,51 @@ function toggleReportEmp(name){
 }
 function reportEmpAll(){ A.rEmpInclude=null; render(); }
 function reportEmpNone(){ A.rEmpInclude=[]; render(); }
+
+// Guided "create report" flow: pick range → pick who → generate PDF
+function showReportBuilder() {
+  const all=[...getRoster(),MANAGER];
+  const inc=A.rEmpInclude;
+  showModal(`<div class="modal" style="max-height:85vh;overflow-y:auto">
+    <div class="modal-title">Create PDF report</div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Period</label>
+    <select id="rb-range" style="margin-bottom:12px">
+      <option value="daily"${A.rRange==='daily'?' selected':''}>Day</option>
+      <option value="weekly"${A.rRange==='weekly'?' selected':''}>Week</option>
+      <option value="biweekly"${A.rRange==='biweekly'?' selected':''}>Two weeks</option>
+      <option value="monthly"${A.rRange==='monthly'?' selected':''}>Month</option>
+    </select>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Anchor date (report covers the period containing this date)</label>
+    <input id="rb-date" type="date" value="${A.rDate}" style="margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <label style="font-size:11px;color:var(--text2)">Include employees</label>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="rbSetAll(true)">All</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="rbSetAll(false)">None</button>
+      </div>
+    </div>
+    <div id="rb-emps" style="background:var(--bg3);border-radius:8px;padding:8px 10px;margin-bottom:14px;max-height:230px;overflow-y:auto">
+      ${all.map(u=>`<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;padding:3px 0">
+        <input type="checkbox" class="rb-cb" value="${u.name.replace(/"/g,'&quot;')}" ${(!inc||inc.includes(u.name))?'checked':''} style="width:16px;height:16px">
+        ${u.name}${u.isManager?' <span style="font-size:9px;color:var(--teal);font-weight:700">MGR</span>':''}
+      </label>`).join('')}
+    </div>
+    <button class="btn btn-primary btn-full" onclick="generateReportFromBuilder()">Create PDF</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+function rbSetAll(on){ document.querySelectorAll('.rb-cb').forEach(cb=>cb.checked=on); }
+function generateReportFromBuilder() {
+  const all=[...getRoster(),MANAGER].map(u=>u.name);
+  const chosen=[...document.querySelectorAll('.rb-cb:checked')].map(cb=>cb.value);
+  if(!chosen.length){ alert('Pick at least one employee.'); return; }
+  A.rRange=document.getElementById('rb-range').value;
+  A.rDate=document.getElementById('rb-date').value||todayKey();
+  A.rEmpInclude = (chosen.length>=all.length)?null:chosen;
+  closeModal();
+  render();
+  exportReportPDF();
+}
 function navReport(dir){
   const d=new Date(A.rDate+'T12:00:00');
   if(A.rRange==='daily')d.setDate(d.getDate()+dir);
@@ -1591,8 +1677,8 @@ function showEditBenefitsModal(empId) {
     <input id="eb-start" type="date" value="${u.startDate||''}" style="margin-bottom:10px">
     <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/year override <span style="color:var(--text3)">(blank = auto by tenure: ${ptoEntitlement({startDate:u.startDate})}d)</span></label>
     <input id="eb-pto" type="number" min="0" step="1" value="${u.ptoOverride!=null?u.ptoOverride:''}" placeholder="auto" style="margin-bottom:10px">
-    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Sick days/year override <span style="color:var(--text3)">(blank = ${SICK_PER_YEAR})</span></label>
-    <input id="eb-sick" type="number" min="0" step="1" value="${u.sickOverride!=null?u.sickOverride:''}" placeholder="${SICK_PER_YEAR}" style="margin-bottom:10px">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Sick days/year override <span style="color:var(--text3)">(blank = ${sickPerYear()})</span></label>
+    <input id="eb-sick" type="number" min="0" step="1" value="${u.sickOverride!=null?u.sickOverride:''}" placeholder="${sickPerYear()}" style="margin-bottom:10px">
     <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO carried over from prior years (days)</label>
     <input id="eb-carry" type="number" min="0" step="0.5" value="${eb.carryover||0}" style="margin-bottom:12px">
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;margin-bottom:14px">
@@ -2385,10 +2471,28 @@ document.getElementById('app').innerHTML = '<div style="display:flex;align-items
 initData().then(render).catch(err => { console.error('Init failed, starting anyway:', err); render(); });
 
 // Register service worker for offline + install-as-app behavior.
-// Falls back gracefully if served from file:// or if SW unsupported.
+// Auto-updates: when a new version is deployed, the new SW takes over and
+// the page reloads once so users always get the latest build.
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW registration failed:', err));
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      // Check for updates on load and every 60s while open
+      reg.update();
+      setInterval(() => reg.update(), 60000);
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+            nw.postMessage('skipWaiting');
+          }
+        });
+      });
+    }).catch(err => console.warn('SW registration failed:', err));
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return; reloaded = true; location.reload();
+    });
   });
 }
 
