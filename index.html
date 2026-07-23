@@ -594,6 +594,12 @@ function updateDots() {
 function pageEmployee() {
   const u = A.user;
   const day = getUserDay(u.name);
+  // One-time self-heal: fix any pre-existing overlapping task times (idempotent; only saves if changed)
+  if(day.notes && day.notes.length>1){
+    const _before = day.notes.map(n=>n.ts||0).join(',');
+    resolveTaskOverlaps(day.notes, dayWorkWindow(day));
+    if(day.notes.map(n=>n.ts||0).join(',') !== _before) saveUserDay(u.name, day);
+  }
   const segs = day.segments;
   const status = getStatus(segs);
   const clockedIn = isClockedIn(segs);
@@ -871,6 +877,7 @@ function addNote() {
   const day = getUserDay(A.user.name);
   const openSeg = day.segments.find(s=>!s.endTs&&s.type==='work');
   day.notes.push({text:val, ts:Date.now(), mins: (mins>0?mins:null), companyId:openSeg?.companyId||null, jobId:openSeg?.jobId||null});
+  resolveTaskOverlaps(day.notes, dayWorkWindow(day)); // keep tasks ordered + non-overlapping
   saveUserDay(A.user.name, day);
   if(inp) inp.value='';
   if(minsInp) minsInp.value='';
@@ -887,14 +894,33 @@ function removeNote(i) {
 // Task time helpers: convert between a clock-time input (HH:MM) and a timestamp on a given day
 function tsToHHMM(ts){ if(!ts) return ''; const d=new Date(ts); return p2(d.getHours())+':'+p2(d.getMinutes()); }
 function hhmmToTs(hhmm, baseIso){ if(!hhmm) return null; const [h,m]=hhmm.split(':').map(Number); const d=new Date((baseIso||todayKey())+'T00:00:00'); d.setHours(h||0, m||0, 0, 0); return d.getTime(); }
+// The clock-in→clock-out window for a day: {start, end}. Tasks must stay inside it.
+function dayWorkWindow(day){
+  const segs = day && day.segments ? day.segments : [];
+  const workStarts = segs.filter(s=>s.type!=='clockout' && s.startTs).map(s=>s.startTs);
+  if(!workStarts.length) return null;
+  const start = Math.min(...workStarts);
+  let end = 0, open = false;
+  segs.forEach(s=>{
+    if(s.endTs) end = Math.max(end, s.endTs);
+    if(s.type==='clockout') end = Math.max(end, s.startTs);
+    if(!s.endTs && s.type!=='clockout') open = true;
+  });
+  if(open) end = Math.max(end, Date.now());
+  if(!end) end = Date.now();
+  return {start, end};
+}
 // Sort tasks by time and push any overlapping later tasks forward so a task's duration
-// never overlaps the next one. Each task occupies [ts, ts + mins].
-function resolveTaskOverlaps(notes){
-  if(!notes || notes.length<2) return;
+// never overlaps the next one. Each task occupies [ts, ts + mins]. Keeps all inside the work window.
+function resolveTaskOverlaps(notes, win){
+  if(!notes || !notes.length) return;
   notes.sort((a,b)=>(a.ts||0)-(b.ts||0));
-  for(let i=1;i<notes.length;i++){
-    const prevEnd = (notes[i-1].ts||0) + ((notes[i-1].mins||0)*60000);
-    if((notes[i].ts||0) < prevEnd) notes[i].ts = prevEnd; // shift this task to start when the previous ends
+  for(let i=0;i<notes.length;i++){
+    if(win && (notes[i].ts||0) < win.start) notes[i].ts = win.start; // not before clock-in
+    if(i>0){
+      const prevEnd = (notes[i-1].ts||0) + ((notes[i-1].mins||0)*60000);
+      if((notes[i].ts||0) < prevEnd) notes[i].ts = prevEnd; // start when the previous task ends
+    }
   }
 }
 
@@ -924,8 +950,14 @@ function saveTaskEdit(i) {
   const time = document.getElementById('et-time')?.value;
   if(text) t.text = text;
   t.mins = mins>0 ? mins : null;
-  if(time) t.ts = hhmmToTs(time, todayKey());
-  resolveTaskOverlaps(day.notes); // auto-shift overlapping tasks so they line up
+  const win = dayWorkWindow(day);
+  if(time){
+    let ts = hhmmToTs(time, todayKey());
+    if(win && ts < win.start){ alert('Task can’t be before clock-in ('+fmtTime(win.start)+'). Set to clock-in time.'); ts = win.start; }
+    if(win && ts > win.end){ alert('Task can’t be after clock-out ('+fmtTime(win.end)+'). Set to clock-out time.'); ts = win.end; }
+    t.ts = ts;
+  }
+  resolveTaskOverlaps(day.notes, win); // auto-shift overlapping tasks so they line up
   saveUserDay(A.user.name, day);
   closeModal();
   render();
@@ -2128,8 +2160,14 @@ function adminSaveTask(name, date, i) {
   const time = document.getElementById('at-time')?.value;
   if(text) t.text = text;
   t.mins = mins>0 ? mins : null;
-  if(time) t.ts = hhmmToTs(time, date);
-  resolveTaskOverlaps(day.notes);
+  const win = dayWorkWindow(day);
+  if(time){
+    let ts = hhmmToTs(time, date);
+    if(win && ts < win.start){ alert('Task can’t be before clock-in ('+fmtTime(win.start)+'). Set to clock-in time.'); ts = win.start; }
+    if(win && ts > win.end){ alert('Task can’t be after clock-out ('+fmtTime(win.end)+'). Set to clock-out time.'); ts = win.end; }
+    t.ts = ts;
+  }
+  resolveTaskOverlaps(day.notes, win);
   saveUserDay(name, day, date);
   showEditTimeModal(name, date);
 }
