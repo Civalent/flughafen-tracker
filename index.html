@@ -224,6 +224,13 @@ const getCompanies = () => ls.get(K.companies) || defaultCompanies();
 const getJobs      = () => ls.get(K.jobs)      || defaultJobs();
 const getIssues    = () => ls.get(K.issues)    || [];
 const getReminders = () => ls.get(K.reminders) || defaultReminders();
+// Which channel an employee gets reminders on: 'both' | 'text' | 'email'
+function remindChannel(u){ return (u && u.remindChannel) || 'both'; }
+// Contacts to send to for a given channel choice (blank = don't send that channel)
+function contactsFor(u, channel){
+  const ch = channel || remindChannel(u);
+  return { phone: (ch==='email') ? '' : (u.phone||''), email: (ch==='text') ? '' : (u.email||'') };
+}
 const saveRoster   = r => ls.set(K.roster, r);
 const saveCos      = c => ls.set(K.companies, c);
 const saveJobs     = j => ls.set(K.jobs, j);
@@ -474,11 +481,12 @@ function checkReminders() {
     // because the manager's browser triggers it for the logged-in employee.
     // For true scheduled delivery regardless of who's logged in, run the
     // reminder loop on a Cloud Scheduler trigger that calls the same function.
-    if (r.smsBackend && (A.user.phone || A.user.email)) {
+    const c = contactsFor(A.user);
+    if (r.smsBackend && (c.phone || c.email)) {
       fetch(r.smsBackend, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({employee: A.user.name, message: msg, phone: A.user.phone||'', email: A.user.email||''})
+        body: JSON.stringify({employee: A.user.name, message: msg, phone: c.phone, email: c.email})
       }).catch(err => console.warn('Reminder backend failed:', err));
     }
 
@@ -1562,6 +1570,14 @@ function mgrReminders() {
   const r = getReminders();
   return `
     <div class="card">
+      <div class="slabel">SEND A REMINDER NOW</div>
+      <p style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:10px">
+        Send an immediate reminder to selected people by text, email, or both — with your own message.
+      </p>
+      <button class="btn btn-primary btn-full" onclick="showSendReminderModal()">Send reminder to…</button>
+    </div>
+
+    <div class="card">
       <div class="slabel">REMINDER SCHEDULE</div>
       <p style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.4">
         Reminders fire as <strong>browser notifications</strong> on each employee's phone/computer when the app is open. For real SMS/email when the app is closed, you need a backend (Firebase Functions + Twilio/SendGrid) — see the note below.
@@ -1592,17 +1608,22 @@ function mgrReminders() {
     <div class="card">
       <div class="slabel">WHO GETS REMINDERS</div>
       <p style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:10px">
-        Only checked employees receive reminders (notification, text, or email). Changes save automatically.
+        Check who gets scheduled reminders, and pick their channel — text, email, or both. Changes save automatically.
       </p>
       ${getRoster().map(u=>`
-        <label class="row" style="cursor:pointer;gap:10px">
+        <div class="row" style="gap:10px">
           <input type="checkbox" ${u.remind===false?'':'checked'} onchange="toggleRemind('${u.id}', this.checked)" style="width:17px;height:17px;cursor:pointer;flex-shrink:0">
           ${avatarHTML(u, 28)}
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:500">${u.name}</div>
-            <div style="font-size:11px;color:var(--text2)">${u.phone||u.email||'no phone/email on record'}</div>
+            <div style="font-size:11px;color:var(--text2)">${u.phone||''}${(u.phone&&u.email)?' · ':''}${u.email||''}${(!u.phone&&!u.email)?'no phone/email on record':''}</div>
           </div>
-        </label>`).join('')}
+          <select onchange="setRemindChannel('${u.id}', this.value)" style="font-size:11px;padding:5px;flex-shrink:0">
+            <option value="both" ${remindChannel(u)==='both'?'selected':''}>Text + Email</option>
+            <option value="text" ${remindChannel(u)==='text'?'selected':''}>Text only</option>
+            <option value="email" ${remindChannel(u)==='email'?'selected':''}>Email only</option>
+          </select>
+        </div>`).join('')}
     </div>
 
     <div class="card">
@@ -1618,6 +1639,72 @@ function toggleRemind(id, on) {
   const roster = getRoster();
   const u = roster.find(x => x.id === id);
   if (u) { u.remind = on; saveRoster(roster); }
+}
+function setRemindChannel(id, ch) {
+  const roster = getRoster();
+  const u = roster.find(x => x.id === id);
+  if (u) { u.remindChannel = ch; saveRoster(roster); }
+}
+
+// ── Send an immediate ("now") reminder to selected people ──
+function showSendReminderModal() {
+  const roster = getRoster();
+  showModal(`<div class="modal" style="max-height:85vh;overflow-y:auto">
+    <div class="modal-title">Send reminder to…</div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Send by</label>
+    <div style="display:flex;gap:16px;margin-bottom:12px;font-size:13px">
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sr-ch" value="both" checked> Text + Email</label>
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sr-ch" value="text"> Text</label>
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sr-ch" value="email"> Email</label>
+    </div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Message</label>
+    <textarea id="sr-msg" rows="3" placeholder="e.g. Team meeting at 3pm today — please be on site." style="margin-bottom:12px;width:100%"></textarea>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <label style="font-size:11px;color:var(--text2)">Recipients</label>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="srSetAll(true)">All</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="srSetAll(false)">None</button>
+      </div>
+    </div>
+    <div id="sr-emps" style="background:var(--bg3);border-radius:8px;padding:8px 10px;margin-bottom:12px;max-height:220px;overflow-y:auto">
+      ${roster.map(u=>`<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;padding:3px 0">
+        <input type="checkbox" class="sr-cb" value="${u.name.replace(/"/g,'&quot;')}" style="width:16px;height:16px">
+        <span style="flex:1;min-width:0">${u.name}</span>
+        <span style="font-size:10px;color:var(--text3)">${u.phone?'📱':''}${u.email?'✉️':''}${(!u.phone&&!u.email)?'no contact':''}</span>
+      </label>`).join('')}
+    </div>
+    <div id="sr-err" style="font-size:12px;min-height:16px;margin-bottom:6px"></div>
+    <button class="btn btn-primary btn-full" id="sr-send" onclick="sendReminderNow()">Send reminder</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+function srSetAll(on){ document.querySelectorAll('.sr-cb').forEach(cb=>cb.checked=on); }
+async function sendReminderNow() {
+  const err = document.getElementById('sr-err');
+  const msg = (document.getElementById('sr-msg')?.value||'').trim();
+  const channel = document.querySelector('input[name="sr-ch"]:checked')?.value || 'both';
+  const names = [...document.querySelectorAll('.sr-cb:checked')].map(cb=>cb.value);
+  err.style.color = '#A32D2D';
+  if (!msg) { err.textContent = 'Enter a message.'; return; }
+  if (!names.length) { err.textContent = 'Pick at least one person.'; return; }
+  const url = getReminders().smsBackend;
+  if (!url) { err.textContent = 'Set the reminder Function URL in the schedule section first.'; return; }
+  const btn = document.getElementById('sr-send'); if (btn){ btn.disabled=true; btn.textContent='Sending…'; }
+  const roster = getRoster();
+  let sent = 0; const fails = [];
+  for (const name of names) {
+    const u = roster.find(r=>r.name===name); if(!u) continue;
+    const c = contactsFor(u, channel);
+    if (!c.phone && !c.email) { fails.push(name+' (no contact for that channel)'); continue; }
+    try {
+      const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({employee:name, message:msg, phone:c.phone, email:c.email})});
+      const j = await res.json().catch(()=>({}));
+      if (j.ok) sent++; else fails.push(name);
+    } catch(e) { fails.push(name); }
+  }
+  if (btn){ btn.disabled=false; btn.textContent='Send reminder'; }
+  err.style.color = fails.length ? '#A32D2D' : 'var(--green)';
+  err.textContent = `Sent to ${sent}.` + (fails.length ? ` Failed: ${fails.join(', ')}` : '');
 }
 
 // ══════════════════════════════════════════════════════════════
