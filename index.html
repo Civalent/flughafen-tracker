@@ -1611,18 +1611,18 @@ function mgrReminders() {
         Check who gets scheduled reminders, and pick their channel — text, email, or both. Changes save automatically.
       </p>
       ${getRoster().map(u=>`
-        <div class="row" style="gap:10px">
-          <input type="checkbox" ${u.remind===false?'':'checked'} onchange="toggleRemind('${u.id}', this.checked)" style="width:17px;height:17px;cursor:pointer;flex-shrink:0">
+        <div class="row" style="gap:10px;align-items:flex-start">
+          <input type="checkbox" ${u.remind===false?'':'checked'} onchange="toggleRemind('${u.id}', this.checked)" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin-top:2px">
           ${avatarHTML(u, 28)}
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:500">${u.name}</div>
-            <div style="font-size:11px;color:var(--text2)">${u.phone||''}${(u.phone&&u.email)?' · ':''}${u.email||''}${(!u.phone&&!u.email)?'no phone/email on record':''}</div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px">${u.phone||''}${(u.phone&&u.email)?' · ':''}${u.email||''}${(!u.phone&&!u.email)?'no phone/email on record':''}</div>
+            <select onchange="setRemindChannel('${u.id}', this.value)" style="font-size:11px;padding:5px 8px;max-width:170px;width:100%">
+              <option value="both" ${remindChannel(u)==='both'?'selected':''}>Text + Email</option>
+              <option value="text" ${remindChannel(u)==='text'?'selected':''}>Text only</option>
+              <option value="email" ${remindChannel(u)==='email'?'selected':''}>Email only</option>
+            </select>
           </div>
-          <select onchange="setRemindChannel('${u.id}', this.value)" style="font-size:11px;padding:5px;flex-shrink:0">
-            <option value="both" ${remindChannel(u)==='both'?'selected':''}>Text + Email</option>
-            <option value="text" ${remindChannel(u)==='text'?'selected':''}>Text only</option>
-            <option value="email" ${remindChannel(u)==='email'?'selected':''}>Email only</option>
-          </select>
         </div>`).join('')}
     </div>
 
