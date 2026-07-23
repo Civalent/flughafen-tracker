@@ -283,46 +283,61 @@ function tenureYears(u) {
   if (m < 0 || (m === 0 && now.getDate() < start.getDate())) yrs--;
   return Math.max(0, yrs);
 }
-// Annual PTO entitlement by tenure (admin override wins; rules are configurable in Settings)
+// Whole years of tenure at a specific date (for tier at each month)
+function tenureYearsAt(startIso, atDate) {
+  const start = new Date(startIso + 'T00:00:00'); if (isNaN(start)) return 0;
+  let yrs = atDate.getFullYear() - start.getFullYear();
+  const m = atDate.getMonth() - start.getMonth();
+  if (m < 0 || (m === 0 && atDate.getDate() < start.getDate())) yrs--;
+  return Math.max(0, yrs);
+}
+// Annual PTO rate by tenure: years 0–3 = pto0_2 (10), after 3 years = pto3_5 (15). Admin override wins.
 function ptoEntitlement(u) {
   if (u && u.benefitsOff) return 0;
   if (u && u.ptoOverride != null && u.ptoOverride !== '') return +u.ptoOverride;
   const r = getRules();
-  const t = tenureYears(u);
-  if (t <= 2) return +r.pto0_2;
-  if (t <= 5) return +r.pto3_5;
-  return +r.pto6plus;
+  return tenureYears(u) < 3 ? +r.pto0_2 : +r.pto3_5;
 }
 function sickPerYear(){ return +getRules().sickPerYear; }
-function workDaysPerYear(){ return +getRules().workDaysPerYear; }
-// Count distinct days worked in a given year (has a work segment)
-function daysWorkedInYear(name, year) {
-  const s = getStore();
-  let n = 0;
-  for (const dk in s) {
-    if (dk.slice(0,4) !== String(year)) continue;
-    const day = s[dk][name];
-    if (day && day.segments && day.segments.some(x=>x.type==='work')) n++;
+// Lifetime PTO accrued: one month's worth for each month employed, at that month's tier rate.
+// Because it's lifetime and we subtract lifetime usage, unused days carry over year to year.
+function accruedPtoLifetime(u) {
+  if (!u || u.benefitsOff || !u.startDate) return 0;
+  if (u.ptoOverride != null && u.ptoOverride !== '') {
+    // Fixed annual override → accrue override/12 per month
   }
-  return n;
+  const r = getRules();
+  const start = new Date(u.startDate + 'T00:00:00'); if (isNaN(start)) return 0;
+  const now = new Date();
+  let total = 0;
+  let d = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (d <= now) {
+    const override = (u.ptoOverride != null && u.ptoOverride !== '') ? +u.ptoOverride : null;
+    const t = tenureYearsAt(u.startDate, d);
+    const annual = override != null ? override : (t < 3 ? +r.pto0_2 : +r.pto3_5);
+    total += annual / 12;
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  }
+  return +total.toFixed(2);
 }
-// Full PTO/sick picture for an employee for the current year
+// Full PTO/sick picture for an employee (PTO carries over; sick resets each year)
 function benefitSummary(u) {
   const name = u.name;
   const year = new Date().getFullYear();
   const b = empBenefits(name);
-  const entitlement = ptoEntitlement(u);
-  const dailyRate = entitlement / workDaysPerYear();
-  const worked = daysWorkedInYear(name, year);
-  const accrued = +(worked * dailyRate).toFixed(2);
-  const carryover = +(b.carryover||0);
-  const usedPto = b.pto.filter(r=>r.status==='approved' && (+String(r.from).slice(0,4)===year)).reduce((a,r)=>a+(+r.days||0),0);
+  const entitlement = ptoEntitlement(u);            // current annual rate
+  const monthlyRate = +(entitlement / 12).toFixed(2); // days per month
+  const accrued = accruedPtoLifetime(u);            // lifetime accrued (carries over)
+  const carryover = +(b.carryover || 0);            // manual starting-balance adjustment
+  const usedPto = b.pto.filter(r=>r.status==='approved').reduce((a,r)=>a+(+r.days||0),0); // lifetime used
   const pendingPto = b.pto.filter(r=>r.status==='pending').reduce((a,r)=>a+(+r.days||0),0);
   const ptoAvailable = +(carryover + accrued - usedPto).toFixed(2);
+  const tenure = tenureYears(u);
+  const eligible = tenure >= 1;                      // can only USE PTO after 1 year of employment
   const sickAllowed = (u.benefitsOff?0:(u.sickOverride!=null&&u.sickOverride!==''?+u.sickOverride:sickPerYear()));
   const usedSick = b.sick.filter(s=>+String(s.date).slice(0,4)===year).length;
   const sickAvailable = Math.max(0, sickAllowed - usedSick);
-  return { entitlement, accrued, carryover, usedPto, pendingPto, ptoAvailable, sickAllowed, usedSick, sickAvailable, tenure:tenureYears(u), worked };
+  return { entitlement, monthlyRate, accrued, carryover, usedPto, pendingPto, ptoAvailable, eligible, sickAllowed, usedSick, sickAvailable, tenure };
 }
 // count weekdays between two ISO dates inclusive (business days requested)
 function businessDaysBetween(fromIso, toIso) {
@@ -995,9 +1010,10 @@ function empTimeOffCard(u) {
       <div class="metric"><div class="metric-label">Sick left</div><div class="metric-value" style="color:var(--blue)">${bs.sickAvailable}<span style="font-size:12px">d</span></div></div>
       <div class="metric"><div class="metric-label">Tenure</div><div class="metric-value">${bs.tenure}<span style="font-size:12px">y</span></div></div>
     </div>
-    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Earned ${bs.accrued}d of ${bs.entitlement}d/yr so far${bs.carryover?` · ${bs.carryover}d carried over`:''}${bs.pendingPto?` · ${bs.pendingPto}d pending approval`:''}.</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Accrues ${bs.monthlyRate}d/month (${bs.entitlement}d/yr at ${bs.tenure<3?'years 0–3':'3+ years'}). Earned ${bs.accrued}d total${bs.usedPto?` · ${bs.usedPto}d used`:''}${bs.pendingPto?` · ${bs.pendingPto}d pending`:''}. Unused PTO carries over.</div>
+    ${!bs.eligible?`<div style="font-size:11px;color:#7A5000;background:#FFF8E6;border:.5px solid #F0C050;border-radius:8px;padding:7px 10px;margin-bottom:10px">⏳ PTO can be used after 1 year of employment. It's accruing in the meantime.</div>`:''}
     <div style="display:flex;gap:7px;margin-bottom:10px">
-      <button class="btn btn-green" style="flex:1;justify-content:center;font-size:12px" onclick="showPtoRequestModal()">Request PTO</button>
+      <button class="btn btn-green" style="flex:1;justify-content:center;font-size:12px" onclick="showPtoRequestModal()" ${bs.eligible?'':'disabled'}>Request PTO</button>
       <button class="btn btn-ghost" style="flex:1;justify-content:center;font-size:12px" onclick="showSickModal()">Log sick day</button>
     </div>
     <div style="border-top:.5px solid var(--border2);padding-top:8px">${reqHTML}</div>
@@ -1036,6 +1052,8 @@ function submitPtoRequest() {
   if(to<from){err.textContent='End date is before start.';return;}
   const days=businessDaysBetween(from,to);
   if(days<1){err.textContent='Range has no business days.';return;}
+  const full=getRoster().find(r=>r.name===A.user.name)||A.user;
+  if(tenureYears(full)<1){err.textContent='PTO can only be used after 1 year of employment.';return;}
   const b=getBenefits(); const eb=empBenefits(A.user.name); b[A.user.name]=eb;
   eb.pto.push({id:Date.now().toString(), from, to, days, reason, status:'pending', ts:Date.now()});
   saveBenefits(b); closeModal(); render();
@@ -1121,15 +1139,14 @@ function mgrSettings() {
     <div class="card">
       <div class="slabel">PTO / BENEFIT RULES</div>
       <p style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:12px">
-        Company-wide defaults. These apply to everyone unless you set a per-person override in the Time off tab. PTO accrues per day worked; sick days reset each Jan 1; PTO carries over.
+        PTO accrues <strong>monthly</strong> (annual ÷ 12 each month), can be <strong>used after 1 year</strong> of employment, and unused days <strong>carry over</strong> to the next year. Sick days reset each Jan 1. Set each employee's start date in the Time off tab.
       </p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/yr · 0–2 years</label><input id="rule-p1" type="number" min="0" step="1" value="${r.pto0_2}"></div>
-        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/yr · 3–5 years</label><input id="rule-p2" type="number" min="0" step="1" value="${r.pto3_5}"></div>
-        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/yr · 6+ years</label><input id="rule-p3" type="number" min="0" step="1" value="${r.pto6plus}"></div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/yr · years 0–3</label><input id="rule-p1" type="number" min="0" step="1" value="${r.pto0_2}"></div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">PTO days/yr · after 3 years</label><input id="rule-p2" type="number" min="0" step="1" value="${r.pto3_5}"></div>
         <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Sick days per year</label><input id="rule-sick" type="number" min="0" step="1" value="${r.sickPerYear}"></div>
-        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Work days/yr (accrual base)</label><input id="rule-wd" type="number" min="1" step="1" value="${r.workDaysPerYear}"></div>
       </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Current: ${(+r.pto0_2/12).toFixed(2)}d/mo (yrs 0–3), ${(+r.pto3_5/12).toFixed(2)}d/mo (3+ yrs).</div>
       <button class="btn btn-primary btn-full" onclick="saveRulesForm()">Save benefit rules</button>
       <div id="rules-saved" style="font-size:12px;color:var(--green);margin-top:6px;min-height:14px;text-align:center"></div>
     </div>
@@ -1139,9 +1156,8 @@ function saveRulesForm() {
   saveRules({
     pto0_2:+document.getElementById('rule-p1').value,
     pto3_5:+document.getElementById('rule-p2').value,
-    pto6plus:+document.getElementById('rule-p3').value,
+    pto6plus:+document.getElementById('rule-p2').value,
     sickPerYear:+document.getElementById('rule-sick').value,
-    workDaysPerYear:Math.max(1,+document.getElementById('rule-wd').value),
   });
   const ok=document.getElementById('rules-saved'); if(ok){ok.textContent='✓ Saved';setTimeout(()=>ok.textContent='',2000);}
   render();
@@ -1757,9 +1773,10 @@ function mgrTimeOff() {
         </div>
         <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="showEditBenefitsModal('${u.id}')">Edit</button>
       </div>
-      ${off?'':`<div style="display:flex;gap:12px;margin-top:6px;padding-left:36px;flex-wrap:wrap">
-        <span style="font-size:12px"><b style="color:var(--green)">${bs.ptoAvailable}d</b> PTO<span style="color:var(--text3)"> (${bs.accrued}/${bs.entitlement} earned)</span></span>
+      ${off?'':`<div style="display:flex;gap:12px;margin-top:6px;padding-left:36px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:12px"><b style="color:var(--green)">${bs.ptoAvailable}d</b> PTO<span style="color:var(--text3)"> (${bs.accrued}d earned @ ${bs.monthlyRate}/mo)</span></span>
         <span style="font-size:12px"><b style="color:var(--blue)">${bs.sickAvailable}d</b> sick<span style="color:var(--text3)"> (${bs.usedSick}/${bs.sickAllowed} used)</span></span>
+        ${!bs.eligible?'<span style="font-size:10px;color:#7A5000;background:#FFF8E6;border-radius:5px;padding:1px 6px">PTO usable after 1yr</span>':''}
         <button class="btn btn-ghost" style="font-size:11px;padding:2px 7px" onclick="showAdminSickModal('${u.id}')">+ Sick day</button>
       </div>`}
     </div>`;
