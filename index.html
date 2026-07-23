@@ -884,7 +884,11 @@ function removeNote(i) {
   render();
 }
 
-// Employee edits their own task description + duration (not clock-in times)
+// Task time helpers: convert between a clock-time input (HH:MM) and a timestamp on a given day
+function tsToHHMM(ts){ if(!ts) return ''; const d=new Date(ts); return p2(d.getHours())+':'+p2(d.getMinutes()); }
+function hhmmToTs(hhmm, baseIso){ if(!hhmm) return null; const [h,m]=hhmm.split(':').map(Number); const d=new Date((baseIso||todayKey())+'T00:00:00'); d.setHours(h||0, m||0, 0, 0); return d.getTime(); }
+
+// Employee edits their own task time, description + duration (not clock-in times)
 function editTask(i) {
   const day = getUserDay(A.user.name);
   const t = day.notes[i]; if(!t) return;
@@ -892,8 +896,12 @@ function editTask(i) {
     <div class="modal-title">Edit task</div>
     <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Description</label>
     <input id="et-text" type="text" value="${(t.text||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px">
-    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Duration (minutes)</label>
-    <input id="et-mins" type="number" min="0" step="5" value="${t.mins||''}" style="margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Time</label>
+        <input id="et-time" type="time" value="${tsToHHMM(t.ts)}"></div>
+      <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Duration (min)</label>
+        <input id="et-mins" type="number" min="0" step="5" value="${t.mins||''}"></div>
+    </div>
     <button class="btn btn-primary btn-full" onclick="saveTaskEdit(${i})">Save</button>
     <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Cancel</button>
   </div>`);
@@ -903,8 +911,11 @@ function saveTaskEdit(i) {
   const t = day.notes[i]; if(!t) return;
   const text = (document.getElementById('et-text')?.value||'').trim();
   const mins = parseInt(document.getElementById('et-mins')?.value||'',10);
+  const time = document.getElementById('et-time')?.value;
   if(text) t.text = text;
   t.mins = mins>0 ? mins : null;
+  if(time) t.ts = hhmmToTs(time, todayKey());
+  day.notes.sort((a,b)=>(a.ts||0)-(b.ts||0)); // keep tasks in time order so they line up
   saveUserDay(A.user.name, day);
   closeModal();
   render();
@@ -2087,8 +2098,12 @@ function adminEditTask(name, date, i) {
     <div class="modal-title">Edit task — ${name}</div>
     <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Description</label>
     <input id="at-text" type="text" value="${(t.text||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px">
-    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Duration (minutes)</label>
-    <input id="at-mins" type="number" min="0" step="5" value="${t.mins||''}" style="margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Time</label>
+        <input id="at-time" type="time" value="${tsToHHMM(t.ts)}"></div>
+      <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Duration (min)</label>
+        <input id="at-mins" type="number" min="0" step="5" value="${t.mins||''}"></div>
+    </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="adminSaveTask('${name.replace(/'/g,"\\'")}','${date}',${i})">Save</button>
       <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="showEditTimeModal('${name.replace(/'/g,"\\'")}','${date}')">Back</button>
@@ -2100,8 +2115,11 @@ function adminSaveTask(name, date, i) {
   const t = (day.notes||[])[i]; if(!t) return;
   const text = (document.getElementById('at-text')?.value||'').trim();
   const mins = parseInt(document.getElementById('at-mins')?.value||'',10);
+  const time = document.getElementById('at-time')?.value;
   if(text) t.text = text;
   t.mins = mins>0 ? mins : null;
+  if(time) t.ts = hhmmToTs(time, date);
+  if(day.notes) day.notes.sort((a,b)=>(a.ts||0)-(b.ts||0));
   saveUserDay(name, day, date);
   showEditTimeModal(name, date);
 }
