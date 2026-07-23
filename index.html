@@ -887,6 +887,16 @@ function removeNote(i) {
 // Task time helpers: convert between a clock-time input (HH:MM) and a timestamp on a given day
 function tsToHHMM(ts){ if(!ts) return ''; const d=new Date(ts); return p2(d.getHours())+':'+p2(d.getMinutes()); }
 function hhmmToTs(hhmm, baseIso){ if(!hhmm) return null; const [h,m]=hhmm.split(':').map(Number); const d=new Date((baseIso||todayKey())+'T00:00:00'); d.setHours(h||0, m||0, 0, 0); return d.getTime(); }
+// Sort tasks by time and push any overlapping later tasks forward so a task's duration
+// never overlaps the next one. Each task occupies [ts, ts + mins].
+function resolveTaskOverlaps(notes){
+  if(!notes || notes.length<2) return;
+  notes.sort((a,b)=>(a.ts||0)-(b.ts||0));
+  for(let i=1;i<notes.length;i++){
+    const prevEnd = (notes[i-1].ts||0) + ((notes[i-1].mins||0)*60000);
+    if((notes[i].ts||0) < prevEnd) notes[i].ts = prevEnd; // shift this task to start when the previous ends
+  }
+}
 
 // Employee edits their own task time, description + duration (not clock-in times)
 function editTask(i) {
@@ -915,7 +925,7 @@ function saveTaskEdit(i) {
   if(text) t.text = text;
   t.mins = mins>0 ? mins : null;
   if(time) t.ts = hhmmToTs(time, todayKey());
-  day.notes.sort((a,b)=>(a.ts||0)-(b.ts||0)); // keep tasks in time order so they line up
+  resolveTaskOverlaps(day.notes); // auto-shift overlapping tasks so they line up
   saveUserDay(A.user.name, day);
   closeModal();
   render();
@@ -2119,7 +2129,7 @@ function adminSaveTask(name, date, i) {
   if(text) t.text = text;
   t.mins = mins>0 ? mins : null;
   if(time) t.ts = hhmmToTs(time, date);
-  if(day.notes) day.notes.sort((a,b)=>(a.ts||0)-(b.ts||0));
+  resolveTaskOverlaps(day.notes);
   saveUserDay(name, day, date);
   showEditTimeModal(name, date);
 }
