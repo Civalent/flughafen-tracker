@@ -1262,26 +1262,41 @@ function mgrReports() {
     </div>`;
   }).join('');
 
-  const empRows = allUsers.filter(u=>report.byEmp[u.name]>0).map(u=>`
-    <div style="padding:8px 0;border-bottom:.5px solid var(--border2)">
+  const s = getStore();
+  const esc = n => n.replace(/'/g,"\\'");
+  const empRows = allUsers.filter(u=>report.byEmp[u.name]>0).map(u=>{
+    const coBk = cos.filter(c=>(report.byEmpCo[u.name]||{})[c.id]>0).map(c=>
+      `<span style="font-size:11px;color:${c.c};margin-right:10px">● ${c.name}: ${durH(report.byEmpCo[u.name][c.id])}</span>`).join('');
+    let edit;
+    if (A.rRange==='daily') {
+      // Daily: one Edit button for the day (times, location, tasks)
+      edit = `<div style="padding-left:36px;margin-top:6px">
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="showEditTimeModal('${esc(u.name)}','${A.rDate}')">✎ Edit times, location &amp; tasks</button>
+      </div>`;
+    } else {
+      // Week/biweek/month: list each day worked, each with its own Edit button
+      const dayRows = report.dates.map(date=>{
+        const day = (s[date]||{})[u.name];
+        if(!day||!day.segments||!day.segments.length) return '';
+        const {work} = calcSegs(day.segments);
+        if(!(work>0)) return '';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:.5px solid var(--border2)">
+          <span style="flex:1;font-size:12px">${fmtDate(date)}</span>
+          <span style="font-size:12px;font-weight:600;color:var(--green)">${durH(work)}</span>
+          <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="showEditTimeModal('${esc(u.name)}','${date}')">✎ Edit</button>
+        </div>`;
+      }).join('');
+      edit = `<div style="padding-left:36px;margin-top:4px">${dayRows}</div>`;
+    }
+    return `<div style="padding:8px 0;border-bottom:.5px solid var(--border2)">
       <div style="display:flex;align-items:center;gap:8px">
         ${avatarHTML(u, 28)}
         <span style="flex:1;font-size:13px;font-weight:500">${u.name}</span>
         <span style="font-size:14px;font-weight:600">${durH(report.byEmp[u.name])}</span>
-        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="mgrExportRangePDF('${u.name}','${A.rRange}','${A.rDate}')">PDF</button>
       </div>
-      <div style="padding-left:36px;margin-top:3px">
-        ${cos.filter(c=>(report.byEmpCo[u.name]||{})[c.id]>0).map(c=>
-          `<span style="font-size:11px;color:${c.c};margin-right:10px">● ${c.name}: ${durH(report.byEmpCo[u.name][c.id])}</span>`
-        ).join('')}
-      </div>
-    </div>`).join('');
-
-  const inc = A.rEmpInclude;
-  const empChips = allUsers.map(u=>{
-    const on = !inc || inc.includes(u.name);
-    return `<button class="chip${on?' active':''}" style="font-size:11px" onclick="toggleReportEmp('${u.name.replace(/'/g,"\\'")}')">
-      ${on?'✓ ':''}${u.name}</button>`;
+      ${coBk?`<div style="padding-left:36px;margin-top:3px">${coBk}</div>`:''}
+      ${edit}
+    </div>`;
   }).join('');
 
   return `
@@ -1290,16 +1305,6 @@ function mgrReports() {
       ${[['daily','Daily'],['weekly','Weekly'],['biweekly','Biweekly'],['monthly','Monthly']].map(([id,lbl])=>
         `<button class="range-btn${A.rRange===id?' on':''}" onclick="setRRange('${id}')">${lbl}</button>`
       ).join('')}
-    </div>
-    <div class="card" style="margin-bottom:10px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div class="slabel" style="margin:0">INCLUDE EMPLOYEES</div>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="reportEmpAll()">All</button>
-          <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="reportEmpNone()">None</button>
-        </div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${empChips}</div>
     </div>
     <div class="date-nav">
       <button class="btn btn-ghost" style="padding:6px 12px" onclick="navReport(-1)">‹</button>
@@ -1312,8 +1317,7 @@ function mgrReports() {
     </div>
     <div class="card"><div class="slabel">By company</div>${coRows || '<p style="font-size:13px;color:var(--text3)">No data for this period.</p>'}</div>
     <div class="card"><div class="slabel">By job</div>${jobRows || '<p style="font-size:13px;color:var(--text3)">No data for this period.</p>'}</div>
-    <div class="card" style="margin-bottom:10px"><div class="slabel">By employee</div>${empRows || '<p style="font-size:13px;color:var(--text3)">No data for this period.</p>'}</div>
-    <button class="btn btn-primary btn-full" onclick="exportReportPDF()" ${report.totalWork>0?'':'disabled'}>Export report PDF</button>`;
+    <div class="card" style="margin-bottom:10px"><div class="slabel">By employee — tap ✎ to edit times, location &amp; tasks</div>${empRows || '<p style="font-size:13px;color:var(--text3)">No data for this period.</p>'}</div>`;
 }
 
 function setRRange(r){A.rRange=r;A.rDate=todayKey();render();}
@@ -1381,10 +1385,10 @@ function navReport(dir){
   render();
 }
 
-function buildReport(range, anchor) {
+function buildReport(range, anchor, includeNames) {
   const cos = getCompanies();
   const jobs = getJobs();
-  const inc = A.rEmpInclude; // null = everyone; else array of names
+  const inc = (typeof includeNames !== 'undefined') ? includeNames : null; // null = everyone; else array of names
   const allUsers = [...getRoster(), MANAGER].filter(u => !inc || inc.includes(u.name));
   const s = getStore();
   const d = new Date(anchor + 'T12:00:00');
@@ -2520,13 +2524,15 @@ function mgrExportRangePDF(name, range, anchor) {
 }
 
 // Team day PDF (already existed as exportAllPDF; rename & include jobs)
-function exportTeamDayPDF() {
+function exportTeamDayPDF(dateArg, includeNames) {
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'pt',format:'letter'});
-  const allUsers=[...getRoster(),MANAGER], cos=getCompanies();
-  const s=getStore(), td=s[todayKey()]||{};
-  const date=fmtDateLong(todayKey());
-  const lm=40,rm=572; let y=pdfHead(doc,'Team Timesheet — Today',date);
+  const inc = includeNames;
+  const allUsers=[...getRoster(),MANAGER].filter(u=>!inc||inc.includes(u.name)), cos=getCompanies();
+  const dateKey = dateArg || todayKey();
+  const s=getStore(), td=s[dateKey]||{};
+  const date=fmtDateLong(dateKey);
+  const lm=40,rm=572; let y=pdfHead(doc, dateKey===todayKey()?'Team Timesheet — Today':'Team Timesheet — Day', date);
 
   doc.setFillColor(240,244,250); doc.rect(lm,y,rm-lm,20,'F');
   doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(100,100,100);
@@ -2548,7 +2554,7 @@ function exportTeamDayPDF() {
     y+=16; if(y>720){doc.addPage();y=48;}
   });
   y+=14; pdfFoot(doc, y, 'Mgr: '+MANAGER.name);
-  doc.save(`team-timesheet-${todayKey()}.pdf`);
+  doc.save(`team-timesheet-${dateKey}.pdf`);
 }
 
 // Team range PDF (week/biweek/month) — one page per employee with daily totals
@@ -2556,7 +2562,7 @@ function exportTeamRangePDF(range) {
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'pt',format:'letter'});
   const allUsers=[...getRoster(),MANAGER];
-  const r = buildReport(range, todayKey());
+  const r = buildReport(range, A.rDate||todayKey(), A.rEmpInclude);
   const titles={weekly:'Weekly',biweekly:'Biweekly',monthly:'Monthly'};
   const lm=40,rm=572; let y=pdfHead(doc, 'Team Timesheet — '+titles[range], r.label);
 
@@ -2613,8 +2619,9 @@ function exportTeamRangePDF(range) {
 }
 
 function exportReportPDF() {
-  // Generic report export from reports tab
-  exportTeamRangePDF(A.rRange==='daily'?'weekly':A.rRange);
+  // Report export honoring the chosen range + selected employees (A.rEmpInclude)
+  if (A.rRange==='daily') exportTeamDayPDF(A.rDate, A.rEmpInclude);
+  else exportTeamRangePDF(A.rRange);
 }
 
 // ══════════════════════════════════════════════════════════════
