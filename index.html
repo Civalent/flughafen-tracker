@@ -403,11 +403,13 @@ const A = {
   view: 'login',
   pin: '',
   user: null,
-  selJob: null,       // selected job id (replaces selCo)
+  selJob: null,       // selected job id
+  selCo: null,        // selected company id (multi-company employees)
   mTab: 'dashboard',
   rRange: 'daily',    // daily | weekly | biweekly | monthly
   rDate: todayKey(),
   rEmpFilter: 'all',  // 'all' or employee name
+  rEmpInclude: null,  // null = all employees in report; else array of names to include
   clockIv: null,
   dashIv: null,
 };
@@ -502,8 +504,20 @@ function pageEmployee() {
   const clockedIn = isClockedIn(segs);
   const clockedOut = isClockedOut(segs);
   const cos = getCompanies();
-  const jobs = getJobs().filter(j=>j.active);
+  const activeJobs = getJobs().filter(j=>j.active);
   const {work, brk, lunch, byCo, byJob} = calcSegs(segs);
+
+  // Companies this employee is assigned to (>1 → company selector shows first)
+  const myCoIds = empCompanies(u);
+  const myCos = cos.filter(c => myCoIds.includes(c.id) && activeJobs.some(j=>j.companyId===c.id));
+  const multiCo = myCos.length > 1;
+  // Ensure a valid selected company when multiple
+  if (multiCo && (!A.selCo || !myCos.some(c=>c.id===A.selCo))) A.selCo = myCos[0].id;
+  // Jobs available for picking, filtered to assigned companies (and selected company if multi)
+  let pickJobs = activeJobs.filter(j => myCoIds.includes(j.companyId));
+  if (multiCo) pickJobs = pickJobs.filter(j => j.companyId === A.selCo);
+  // Default the selected job to one in the current pick list
+  if (!pickJobs.some(j=>j.id===A.selJob)) A.selJob = pickJobs[0]?.id || null;
 
   const SC = {
     working:{bg:'var(--green-light)',c:'#27500A'}, break:{bg:'var(--orange-light)',c:'#633806'},
@@ -513,32 +527,40 @@ function pageEmployee() {
   const SL = {working:'Working',break:'On break',lunch:'At lunch',done:'Clocked out',out:'Not clocked in',idle:'Working'};
   const stDisplay = clockedOut ? 'done' : status;
 
-  // Job picker (chips grouped by company)
-  function jobChips(selectedId, onclickFn) {
-    if (!jobs.length) return '<p style="font-size:12px;color:var(--text3)">No jobs configured. Ask manager to add one.</p>';
-    return jobs.map(j=>{
+  // Company selector chips (only when employee works for >1 company)
+  function companyChips() {
+    return myCos.map(c=>`<button class="chip${A.selCo===c.id?' active':''}" style="color:${c.c}" onclick="selCo('${c.id}')">
+      <span class="chip-dot" style="background:${c.c}"></span>${c.name}
+    </button>`).join('');
+  }
+  // Job chips from an explicit list
+  function jobChipsFrom(list, selectedId, onclickFn) {
+    if (!list.length) return '<p style="font-size:12px;color:var(--text3)">No jobs for this company. Ask manager to add one.</p>';
+    return list.map(j=>{
       const co = cos.find(c=>c.id===j.companyId);
       const color = co ? co.c : 'var(--text2)';
       return `<button class="chip${selectedId===j.id?' active':''}" style="color:${color}" onclick="${onclickFn}('${j.id}')">
-        <span class="chip-dot" style="background:${color}"></span>${j.name}${co?' · '+co.name.split(' ')[0]:''}
+        <span class="chip-dot" style="background:${color}"></span>${j.name}${(co&&!multiCo)?' · '+co.name.split(' ')[0]:''}
       </button>`;
     }).join('');
   }
+  const coSelectorBlock = multiCo ? `<div class="slabel">Select company</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${companyChips()}</div>` : '';
 
   let actions = '';
   if (!clockedIn && !clockedOut) {
-    const selJob = jobs.find(j=>j.id===A.selJob) || jobs[0];
-    actions = `
+    const selJob = pickJobs.find(j=>j.id===A.selJob) || pickJobs[0];
+    actions = coSelectorBlock + `
       <div class="slabel">Select job</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${jobChips(A.selJob, 'selJob')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${jobChipsFrom(pickJobs, A.selJob, 'selJob')}</div>
       <button class="btn btn-green btn-full" onclick="doClock('in')" ${!selJob?'disabled':''}>
         Clock in${selJob ? ' — '+selJob.name : ''}
       </button>`;
   } else if (clockedOut) {
-    actions = `
+    actions = coSelectorBlock + `
       <div style="background:#FFF8E6;border:.5px solid #F0C050;border-radius:10px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:#7A5000;">⚠️ Clocked out — tap below if this was an accident.</div>
       <div class="slabel" style="margin-top:10px">Resume on job</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${jobChips(A.selJob, 'selJob')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${jobChipsFrom(pickJobs, A.selJob, 'selJob')}</div>
       <button class="btn btn-green btn-full" onclick="undoClockOut()">Resume work</button>`;
   } else if (status==='break') {
     actions = `<button class="btn btn-green btn-full" onclick="doClock('endbreak')">End break — back to work</button>`;
@@ -546,9 +568,10 @@ function pageEmployee() {
     actions = `<button class="btn btn-green btn-full" onclick="doClock('endlunch')">Back from lunch</button>`;
   } else {
     const openSeg = segs.find(s=>!s.endTs&&s.type==='work');
+    const switchJobs = activeJobs.filter(j => myCoIds.includes(j.companyId));
     actions = `
-      <div class="slabel">Switch job</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${jobChips(openSeg?.jobId, 'switchJob')}</div>
+      <div class="slabel">Switch job${multiCo?' (any company)':''}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${jobChipsFrom(switchJobs, openSeg?.jobId, 'switchJob')}</div>
       <div class="action-grid" style="grid-template-columns:1fr 1fr">
         <button class="btn btn-orange" onclick="doClock('break')" style="justify-content:center">Start break</button>
         <button class="btn btn-primary" onclick="doClock('lunch')" style="justify-content:center">Lunch</button>
@@ -741,6 +764,7 @@ async function undoClockOut() {
 }
 
 function selJob(id) { A.selJob=id; render(); }
+function selCo(id) { A.selCo=id; A.selJob=null; render(); }
 
 function addNote() {
   const inp = document.getElementById('note-inp');
@@ -960,11 +984,28 @@ function mgrReports() {
       </div>
     </div>`).join('');
 
+  const inc = A.rEmpInclude;
+  const empChips = allUsers.map(u=>{
+    const on = !inc || inc.includes(u.name);
+    return `<button class="chip${on?' active':''}" style="font-size:11px" onclick="toggleReportEmp('${u.name.replace(/'/g,"\\'")}')">
+      ${on?'✓ ':''}${u.name}</button>`;
+  }).join('');
+
   return `
     <div class="range-group">
       ${[['daily','Daily'],['weekly','Weekly'],['biweekly','Biweekly'],['monthly','Monthly']].map(([id,lbl])=>
         `<button class="range-btn${A.rRange===id?' on':''}" onclick="setRRange('${id}')">${lbl}</button>`
       ).join('')}
+    </div>
+    <div class="card" style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="slabel" style="margin:0">INCLUDE EMPLOYEES</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="reportEmpAll()">All</button>
+          <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="reportEmpNone()">None</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${empChips}</div>
     </div>
     <div class="date-nav">
       <button class="btn btn-ghost" style="padding:6px 12px" onclick="navReport(-1)">‹</button>
@@ -982,6 +1023,15 @@ function mgrReports() {
 }
 
 function setRRange(r){A.rRange=r;A.rDate=todayKey();render();}
+function toggleReportEmp(name){
+  const all=[...getRoster(),MANAGER].map(u=>u.name);
+  let inc = A.rEmpInclude ? [...A.rEmpInclude] : [...all];
+  if(inc.includes(name)) inc=inc.filter(n=>n!==name); else inc.push(name);
+  A.rEmpInclude = (inc.length>=all.length)?null:inc;
+  render();
+}
+function reportEmpAll(){ A.rEmpInclude=null; render(); }
+function reportEmpNone(){ A.rEmpInclude=[]; render(); }
 function navReport(dir){
   const d=new Date(A.rDate+'T12:00:00');
   if(A.rRange==='daily')d.setDate(d.getDate()+dir);
@@ -995,7 +1045,8 @@ function navReport(dir){
 function buildReport(range, anchor) {
   const cos = getCompanies();
   const jobs = getJobs();
-  const allUsers = [...getRoster(), MANAGER];
+  const inc = A.rEmpInclude; // null = everyone; else array of names
+  const allUsers = [...getRoster(), MANAGER].filter(u => !inc || inc.includes(u.name));
   const s = getStore();
   const d = new Date(anchor + 'T12:00:00');
   let dates = [];
@@ -1467,6 +1518,20 @@ function showEmpModal(id) {
     <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Email (for email reminders, optional)</label>
     <input id="m-email" type="email" value="${u?u.email||'':''}" placeholder="maria@example.com" style="margin-bottom:12px">
 
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Works for (companies)</label>
+    <div id="m-companies" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;background:var(--bg3);border-radius:8px;padding:8px 10px">
+      ${getCompanies().map(c=>{
+        const checked = empCompanies(u).includes(c.id);
+        return `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" class="m-co-cb" value="${c.id}" ${checked?'checked':''} style="width:16px;height:16px">
+          <span style="width:9px;height:9px;border-radius:3px;background:${c.c};flex-shrink:0"></span>${c.name}
+        </label>`;
+      }).join('')}
+    </div>
+
+    <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Employment start date (for PTO / tenure)</label>
+    <input id="m-start" type="date" value="${u?u.startDate||'':''}" style="margin-bottom:12px">
+
     <div id="m-err" style="font-size:12px;color:#A32D2D;min-height:16px;margin-bottom:8px"></div>
     <div style="display:flex;gap:7px">
       <button class="btn ${u?'btn-primary':'btn-green'}" style="flex:1;justify-content:center;padding:11px" onclick="${u?`saveEditEmp('${id}')`:'saveAddEmp()'}">${u?'Save changes':'Add employee'}</button>
@@ -1487,12 +1552,20 @@ function onPhotoChange(ev) {
   });
 }
 
+// Companies an employee works for; empty/undefined = all companies (backward compatible)
+function empCompanies(u) {
+  if (u && u.companies && u.companies.length) return u.companies;
+  return getCompanies().map(c=>c.id);
+}
 function empFormVals() {
+  const companies = [...document.querySelectorAll('.m-co-cb:checked')].map(cb=>cb.value);
   return {
     name:(document.getElementById('m-name')?.value||'').trim(),
     pin:(document.getElementById('m-pin')?.value||'').trim(),
     phone:(document.getElementById('m-phone')?.value||'').trim(),
     email:(document.getElementById('m-email')?.value||'').trim(),
+    companies: companies,
+    startDate:(document.getElementById('m-start')?.value||'').trim(),
     photo: window._pendingPhoto || null,
   };
 }
@@ -1566,17 +1639,64 @@ function showEditTimeModal(name, targetDate) {
   }).join('');
   const alreadyOut = isClockedOut(segs);
   const addClockOutBtn = !alreadyOut && segs.length > 0 ? `<button onclick="addManualClockOut('${name}','${date}')" class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:8px;font-size:13px">+ Add clock-out time</button>` : '';
+  // Tasks logged that day (admin can edit description + duration)
+  const taskRows = (day.notes||[]).map((n,i)=>{
+    const job = jobs.find(j=>j.id===n.jobId);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:.5px solid var(--border2)">
+      <span style="flex:1;font-size:13px;min-width:0">${n.text}${job?' <span style="font-size:11px;color:var(--text3)">· '+job.name+'</span>':''}${n.mins?' <span style="font-size:11px;color:var(--teal);font-weight:600">· '+n.mins+'m</span>':''}</span>
+      <button onclick="adminEditTask('${name}','${date}',${i})" style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:12px;padding:2px 6px;font-family:inherit">✎</button>
+      <button onclick="adminDeleteTask('${name}','${date}',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:12px;padding:2px 6px;font-family:inherit">✕</button>
+    </div>`;
+  }).join('');
   showModal(`<div class="modal">
     <div class="modal-title">Edit time — ${name}</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;padding:8px 10px;background:var(--bg3);border-radius:8px">📅 ${fmtDate(date)} · Changes recalculate all totals.</div>
-    <div id="seg-edit-list">${segs.length===0?'<p style="font-size:13px;color:var(--text3);text-align:center;padding:16px 0">No entries.</p>':segRows}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <span style="font-size:12px;color:var(--text2);white-space:nowrap">📅 Date:</span>
+      <input type="date" value="${date}" onchange="showEditTimeModal('${name.replace(/'/g,"\\'")}', this.value)" style="flex:1">
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Pick any past or current day. Changes recalculate all totals.</div>
+    <div class="slabel">Clock segments</div>
+    <div id="seg-edit-list">${segs.length===0?'<p style="font-size:13px;color:var(--text3);text-align:center;padding:16px 0">No entries this day.</p>':segRows}</div>
     ${addClockOutBtn}
+    ${(day.notes&&day.notes.length)?`<div class="slabel" style="margin-top:14px">Tasks</div>${taskRows}`:''}
     <div id="edit-err" style="font-size:12px;color:#A32D2D;min-height:16px;margin-top:8px"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="btn btn-primary" style="flex:1;justify-content:center;padding:11px" onclick="saveEditTime('${name}','${date}',${segs.length})">Save changes</button>
+      <button class="btn btn-primary" style="flex:1;justify-content:center;padding:11px" onclick="saveEditTime('${name.replace(/'/g,"\\'")}','${date}',${segs.length})">Save changes</button>
       <button class="btn btn-ghost" style="flex:1;justify-content:center;padding:11px" onclick="closeModal()">Cancel</button>
     </div>
   </div>`);
+}
+// Admin edits a task's description + duration on any day
+function adminEditTask(name, date, i) {
+  const day = getUserDay(name, date);
+  const t = (day.notes||[])[i]; if(!t) return;
+  showModal(`<div class="modal">
+    <div class="modal-title">Edit task — ${name}</div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Description</label>
+    <input id="at-text" type="text" value="${(t.text||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Duration (minutes)</label>
+    <input id="at-mins" type="number" min="0" step="5" value="${t.mins||''}" style="margin-bottom:14px">
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="adminSaveTask('${name.replace(/'/g,"\\'")}','${date}',${i})">Save</button>
+      <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="showEditTimeModal('${name.replace(/'/g,"\\'")}','${date}')">Back</button>
+    </div>
+  </div>`);
+}
+function adminSaveTask(name, date, i) {
+  const day = getUserDay(name, date);
+  const t = (day.notes||[])[i]; if(!t) return;
+  const text = (document.getElementById('at-text')?.value||'').trim();
+  const mins = parseInt(document.getElementById('at-mins')?.value||'',10);
+  if(text) t.text = text;
+  t.mins = mins>0 ? mins : null;
+  saveUserDay(name, day, date);
+  showEditTimeModal(name, date);
+}
+function adminDeleteTask(name, date, i) {
+  const day = getUserDay(name, date);
+  if(day.notes) day.notes.splice(i,1);
+  saveUserDay(name, day, date);
+  showEditTimeModal(name, date);
 }
 function saveEditTime(name, date, segCount) {
   const err = document.getElementById('edit-err');
