@@ -268,14 +268,17 @@ function mkInit(name){const p=name.trim().split(/\s+/);return p.length===1?p[0].
 // ── Geolocation ────────────────────────────────────────────
 function getLocation() {
   return new Promise(resolve => {
-    if (!navigator.geolocation) return resolve(null);
+    if (!navigator.geolocation) return resolve({noLoc:true, denied:false, reason:'unsupported'});
     navigator.geolocation.getCurrentPosition(
       pos => resolve({lat:+pos.coords.latitude.toFixed(6), lng:+pos.coords.longitude.toFixed(6), acc:Math.round(pos.coords.accuracy), ts:Date.now()}),
-      err => { console.warn('geo:', err.message); resolve(null); },
+      err => { console.warn('geo:', err.message); resolve({noLoc:true, denied: err.code===1, reason: err.message}); },
       {enableHighAccuracy:true, timeout:6000, maximumAge:30000}
     );
   });
 }
+// A real fix has .lat; getLocation may instead return {noLoc:true} when denied/unavailable
+function hasCoords(loc){ return !!(loc && loc.lat); }
+function noLocFlagHTML(){ return '<span class="noloc-flag" style="display:inline-flex;align-items:center;gap:3px;background:#FCE8E6;color:#B3261E;font-size:10px;font-weight:600;padding:2px 6px;border-radius:5px;white-space:nowrap">🚩 No location</span>'; }
 function locLink(loc) {
   if (!loc) return '';
   return `<a href="https://maps.google.com/?q=${loc.lat},${loc.lng}" target="_blank" rel="noopener" class="loc-pin" style="text-decoration:none">📍 ${loc.lat.toFixed(4)},${loc.lng.toFixed(4)} ±${loc.acc}m</a>`;
@@ -565,21 +568,28 @@ function pageEmployee() {
           <span style="width:7px;height:7px;border-radius:2px;background:${co?co.c:'var(--text3)'};flex-shrink:0"></span>
           <span style="flex:1;color:var(--text);min-width:0">
             <div>${label}${job?' · <span style="color:'+(co?co.c:'var(--text2)')+'">'+job.name+'</span>':''}</div>
-            ${s.startLoc?'<div>'+locLink(s.startLoc)+'</div>':''}
+            ${s.startLoc?'<div>'+locLink(s.startLoc)+'</div>':(s.noLoc?'<div>'+noLocFlagHTML()+'</div>':'')}
           </span>
           <span style="color:var(--text2);margin-right:8px;flex-shrink:0">${dur}</span>
           <span style="color:var(--text3);font-variant-numeric:tabular-nums;font-size:11px;flex-shrink:0">${fmtTime(s.startTs)}${s.endTs?' → '+fmtTime(s.endTs):''}</span>
         </div>`;
       }).join('');
 
-  // Notes
-  const noteHTML = day.notes.length === 0 ? '' : day.notes.map((n,i) => {
+  // Tasks (activities logged during work)
+  const taskHTML = day.notes.length === 0 ? '<p style="font-size:12px;color:var(--text3)">No tasks logged yet.</p>' : day.notes.map((n,i) => {
     const co = cos.find(c=>c.id===n.companyId);
+    const job = getJobs().find(j=>j.id===n.jobId);
+    const mins = n.mins ? `<span style="font-size:11px;color:var(--teal);font-weight:600;margin-right:6px">${n.mins}m</span>` : '';
     return `<div class="seg-row">
       <span style="width:7px;height:7px;border-radius:50%;background:${co?co.c:'var(--text3)'};flex-shrink:0"></span>
-      <span style="flex:1;color:var(--text)">${n.text}</span>
+      <span style="flex:1;color:var(--text);min-width:0">
+        <div>${n.text}</div>
+        ${job?'<div style="font-size:11px;color:'+(co?co.c:'var(--text3)')+'">'+job.name+'</div>':''}
+      </span>
+      ${mins}
       <span style="font-size:11px;color:var(--text3);margin-right:6px">${fmtTime(n.ts)}</span>
-      <button onclick="removeNote(${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:2px 5px;font-family:inherit">✕</button>
+      <button onclick="editTask(${i})" title="Edit task" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:2px 5px;font-family:inherit">✎</button>
+      <button onclick="removeNote(${i})" title="Delete task" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:2px 5px;font-family:inherit">✕</button>
     </div>`;
   }).join('');
 
@@ -622,12 +632,13 @@ function pageEmployee() {
     </div>
 
     <div class="card">
-      <div class="slabel">Project notes</div>
+      <div class="slabel">Tasks</div>
       <div style="display:flex;gap:7px;margin-bottom:8px">
-        <input id="note-inp" type="text" placeholder="Note…" onkeydown="if(event.key==='Enter')addNote()">
+        <input id="note-inp" type="text" placeholder="Task description…" onkeydown="if(event.key==='Enter')addNote()" style="flex:1">
+        <input id="task-mins" type="number" min="0" step="5" placeholder="min" style="width:64px;flex-shrink:0" onkeydown="if(event.key==='Enter')addNote()">
         <button class="btn btn-ghost" onclick="addNote()" style="white-space:nowrap;flex-shrink:0">Add</button>
       </div>
-      <div id="notes-list">${noteHTML}</div>
+      <div id="notes-list">${taskHTML}</div>
     </div>
 
     <div class="card">
@@ -664,26 +675,31 @@ async function doClock(action) {
   const selJob = jobs.find(j=>j.id===A.selJob) || jobs.filter(j=>j.active)[0];
   const now = Date.now();
   const loc = await getLocation();
+  const hasLoc = hasCoords(loc);
+  const startLoc = hasLoc ? loc : null;
 
-  const closeOpen = () => { const open=segs.find(s=>!s.endTs); if(open){open.endTs=now; if(loc)open.endLoc=loc;} };
+  const closeOpen = () => { const open=segs.find(s=>!s.endTs); if(open){open.endTs=now; if(hasLoc)open.endLoc=loc;} };
   const lastWorkSeg = () => { const ws=segs.filter(s=>s.type==='work'); return ws.length?ws[ws.length-1]:null; };
 
   if (action==='in') {
     if (!selJob) { alert('Please select a job first.'); return; }
-    segs.push({type:'work', companyId:selJob.companyId, jobId:selJob.id, startTs:now, endTs:null, startLoc:loc});
+    segs.push({type:'work', companyId:selJob.companyId, jobId:selJob.id, startTs:now, endTs:null, startLoc, noLoc:!hasLoc});
   } else if (action==='out') {
     closeOpen();
-    segs.push({type:'clockout', companyId:null, jobId:null, startTs:now, endTs:now, startLoc:loc});
+    segs.push({type:'clockout', companyId:null, jobId:null, startTs:now, endTs:now, startLoc, noLoc:!hasLoc});
   } else if (action==='break') {
     closeOpen();
-    segs.push({type:'break', companyId:null, jobId:null, startTs:now, endTs:null, startLoc:loc});
+    segs.push({type:'break', companyId:null, jobId:null, startTs:now, endTs:null, startLoc, noLoc:!hasLoc});
   } else if (action==='endbreak' || action==='endlunch') {
     closeOpen();
     const lw = lastWorkSeg();
-    segs.push({type:'work', companyId:lw?.companyId||selJob?.companyId, jobId:lw?.jobId||selJob?.id, startTs:now, endTs:null, startLoc:loc});
+    segs.push({type:'work', companyId:lw?.companyId||selJob?.companyId, jobId:lw?.jobId||selJob?.id, startTs:now, endTs:null, startLoc, noLoc:!hasLoc});
   } else if (action==='lunch') {
     closeOpen();
-    segs.push({type:'lunch', companyId:null, jobId:null, startTs:now, endTs:null, startLoc:loc});
+    segs.push({type:'lunch', companyId:null, jobId:null, startTs:now, endTs:null, startLoc, noLoc:!hasLoc});
+  }
+  if (!hasLoc && loc && loc.denied && action==='in') {
+    alert('Heads up: location permission is off, so this clock-in is flagged as "No location". Please enable location for this site so future clock-ins record where you are.');
   }
   saveUserDay(A.user.name, day);
   render();
@@ -697,8 +713,9 @@ async function switchJob(jobId) {
   if (!job) return;
   const now = Date.now();
   const loc = await getLocation();
-  if (open) { open.endTs = now; if(loc) open.endLoc = loc; }
-  day.segments.push({type:'work', companyId:job.companyId, jobId:job.id, startTs:now, endTs:null, startLoc:loc});
+  const hasLoc = hasCoords(loc);
+  if (open) { open.endTs = now; if(hasLoc) open.endLoc = loc; }
+  day.segments.push({type:'work', companyId:job.companyId, jobId:job.id, startTs:now, endTs:null, startLoc:hasLoc?loc:null, noLoc:!hasLoc});
   saveUserDay(A.user.name, day);
   A.selJob = jobId;
   render();
@@ -716,7 +733,8 @@ async function undoClockOut() {
   const hasOpen = segs.some(s=>!s.endTs);
   if (!hasOpen) {
     const loc = await getLocation();
-    segs.push({type:'work', companyId:selJob?.companyId, jobId:selJob?.id, startTs:Date.now(), endTs:null, startLoc:loc});
+    const hasLoc = hasCoords(loc);
+    segs.push({type:'work', companyId:selJob?.companyId, jobId:selJob?.id, startTs:Date.now(), endTs:null, startLoc:hasLoc?loc:null, noLoc:!hasLoc});
   }
   saveUserDay(A.user.name, day);
   render();
@@ -726,12 +744,15 @@ function selJob(id) { A.selJob=id; render(); }
 
 function addNote() {
   const inp = document.getElementById('note-inp');
+  const minsInp = document.getElementById('task-mins');
   const val = (inp?.value||'').trim(); if(!val) return;
+  const mins = parseInt(minsInp?.value||'',10);
   const day = getUserDay(A.user.name);
   const openSeg = day.segments.find(s=>!s.endTs&&s.type==='work');
-  day.notes.push({text:val, ts:Date.now(), companyId:openSeg?.companyId||null, jobId:openSeg?.jobId||null});
+  day.notes.push({text:val, ts:Date.now(), mins: (mins>0?mins:null), companyId:openSeg?.companyId||null, jobId:openSeg?.jobId||null});
   saveUserDay(A.user.name, day);
   if(inp) inp.value='';
+  if(minsInp) minsInp.value='';
   render();
 }
 
@@ -739,6 +760,32 @@ function removeNote(i) {
   const day = getUserDay(A.user.name);
   day.notes.splice(i,1);
   saveUserDay(A.user.name, day);
+  render();
+}
+
+// Employee edits their own task description + duration (not clock-in times)
+function editTask(i) {
+  const day = getUserDay(A.user.name);
+  const t = day.notes[i]; if(!t) return;
+  showModal(`<div class="modal">
+    <div class="modal-title">Edit task</div>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Description</label>
+    <input id="et-text" type="text" value="${(t.text||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px">
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Duration (minutes)</label>
+    <input id="et-mins" type="number" min="0" step="5" value="${t.mins||''}" style="margin-bottom:14px">
+    <button class="btn btn-primary btn-full" onclick="saveTaskEdit(${i})">Save</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+function saveTaskEdit(i) {
+  const day = getUserDay(A.user.name);
+  const t = day.notes[i]; if(!t) return;
+  const text = (document.getElementById('et-text')?.value||'').trim();
+  const mins = parseInt(document.getElementById('et-mins')?.value||'',10);
+  if(text) t.text = text;
+  t.mins = mins>0 ? mins : null;
+  saveUserDay(A.user.name, day);
+  closeModal();
   render();
 }
 
@@ -852,6 +899,7 @@ function dashRows() {
     const activeJob = openSeg ? jobs.find(j=>j.id===openSeg.jobId) : null;
     const activeCo = openSeg ? cos.find(c=>c.id===openSeg.companyId) : null;
     const lastLoc = openSeg?.startLoc || [...d.segments].reverse().find(x=>x.startLoc)?.startLoc;
+    const anyNoLoc = d.segments.some(x=>x.noLoc && !x.startLoc && x.type!=='clockout');
     return `<div class="row">
       ${avatarHTML(u, 34)}
       <div style="flex:1;min-width:0">
@@ -859,6 +907,7 @@ function dashRows() {
         <div style="font-size:11px;color:var(--text2);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           ${activeJob?`<span style="color:${activeCo?.c||'var(--text2)'}">● ${activeJob.name}</span>`:work>0?durH(work)+' total':'—'}
           ${lastLoc?locLink(lastLoc):''}
+          ${anyNoLoc?noLocFlagHTML():''}
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
