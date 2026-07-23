@@ -1230,7 +1230,10 @@ function dashRows() {
       <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
         <span style="font-size:12px;color:var(--text2)">${work>0?durH(work):''}</span>
         <span class="pill" style="background:${SC[stD]?.bg};color:${SC[stD]?.c};font-size:10px">${{working:'Working',break:'Break',lunch:'Lunch',done:'Done',out:'Out',idle:'Working'}[stD]||stD}</span>
-        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="showEditTimeModal('${u.name}')" ${d.segments.length?'':'disabled'}>Edit</button>
+        ${isClockedIn(d.segments)
+          ? `<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:#A32D2D;font-weight:600" onclick="adminClockOut('${u.name.replace(/'/g,"\\'")}')">Clock out</button>`
+          : `<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:var(--green);font-weight:600" onclick="adminClockIn('${u.name.replace(/'/g,"\\'")}')">Clock in</button>`}
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="showEditTimeModal('${u.name.replace(/'/g,"\\'")}')" >Edit</button>
         <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="mgrExportPDF('${u.name}')" ${d.segments.length?'':'disabled'}>PDF</button>
       </div>
     </div>`;
@@ -1264,14 +1267,16 @@ function mgrReports() {
 
   const s = getStore();
   const esc = n => n.replace(/'/g,"\\'");
-  const empRows = allUsers.filter(u=>report.byEmp[u.name]>0).map(u=>{
+  // Show ALL employees so admin can add time for anyone — even those who never clocked in
+  const empRows = allUsers.map(u=>{
+    const total = report.byEmp[u.name]||0;
     const coBk = cos.filter(c=>(report.byEmpCo[u.name]||{})[c.id]>0).map(c=>
       `<span style="font-size:11px;color:${c.c};margin-right:10px">● ${c.name}: ${durH(report.byEmpCo[u.name][c.id])}</span>`).join('');
     let edit;
     if (A.rRange==='daily') {
-      // Daily: one Edit button for the day (times, location, tasks)
+      // Daily: one Edit/Add button for the day (times, location, tasks)
       edit = `<div style="padding-left:36px;margin-top:6px">
-        <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="showEditTimeModal('${esc(u.name)}','${A.rDate}')">✎ Edit times, location &amp; tasks</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="showEditTimeModal('${esc(u.name)}','${A.rDate}')">✎ ${total>0?'Edit':'Add'} times, location &amp; tasks</button>
       </div>`;
     } else {
       // Week/biweek/month: list each day worked, each with its own Edit button
@@ -1286,13 +1291,15 @@ function mgrReports() {
           <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="showEditTimeModal('${esc(u.name)}','${date}')">✎ Edit</button>
         </div>`;
       }).join('');
-      edit = `<div style="padding-left:36px;margin-top:4px">${dayRows}</div>`;
+      edit = `<div style="padding-left:36px;margin-top:4px">${dayRows}
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;margin-top:4px" onclick="showEditTimeModal('${esc(u.name)}','${report.dates[0]}')">✎ Add / edit a day</button>
+      </div>`;
     }
     return `<div style="padding:8px 0;border-bottom:.5px solid var(--border2)">
       <div style="display:flex;align-items:center;gap:8px">
         ${avatarHTML(u, 28)}
         <span style="flex:1;font-size:13px;font-weight:500">${u.name}</span>
-        <span style="font-size:14px;font-weight:600">${durH(report.byEmp[u.name])}</span>
+        <span style="font-size:14px;font-weight:600;color:${total>0?'var(--text)':'var(--text3)'}">${total>0?durH(total):'—'}</span>
       </div>
       ${coBk?`<div style="padding-left:36px;margin-top:3px">${coBk}</div>`:''}
       ${edit}
@@ -2213,13 +2220,35 @@ function showEditTimeModal(name, targetDate) {
     </div>
     <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Pick any past or current day. Changes recalculate all totals.</div>
     <div class="slabel">Clock segments</div>
-    <div id="seg-edit-list">${segs.length===0?'<p style="font-size:13px;color:var(--text3);text-align:center;padding:16px 0">No entries this day.</p>':segRows}</div>
+    <div id="seg-edit-list">${segs.length===0?'<p style="font-size:13px;color:var(--text3);text-align:center;padding:16px 0">No entries this day. Add one below.</p>':segRows}</div>
     ${addClockOutBtn}
-    ${(day.notes&&day.notes.length)?`<div class="slabel" style="margin-top:14px">Tasks</div>${taskRows}`:''}
+
+    <div class="slabel" style="margin-top:16px">➕ Add work entry (forgot to clock in)</div>
+    <div style="background:var(--bg3);border-radius:10px;padding:10px 12px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Job</label>
+      <select id="add-job" style="margin-bottom:8px">${getJobs().filter(j=>j.active).map(j=>{const co=cos.find(c=>c.id===j.companyId);return `<option value="${j.id}">${j.name}${co?' · '+co.name.split(' ')[0]:''}</option>`}).join('')}</select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Clock in</label><input id="add-start" type="time" value="08:00"></div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Clock out</label><input id="add-end" type="time" value="17:00"></div>
+      </div>
+      <button class="btn btn-green btn-full" style="font-size:13px" onclick="adminAddEntry('${name.replace(/'/g,"\\'")}','${date}')">Add work entry</button>
+    </div>
+
+    ${(day.notes&&day.notes.length)?`<div class="slabel" style="margin-top:16px">Tasks</div>${taskRows}`:''}
+    <div class="slabel" style="margin-top:14px">➕ Add task</div>
+    <div style="background:var(--bg3);border-radius:10px;padding:10px 12px">
+      <input id="add-task-text" type="text" placeholder="Task description" style="margin-bottom:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Time</label><input id="add-task-time" type="time"></div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Duration (min)</label><input id="add-task-mins" type="number" min="0" step="5"></div>
+      </div>
+      <button class="btn btn-ghost btn-full" style="font-size:13px" onclick="adminAddTaskNew('${name.replace(/'/g,"\\'")}','${date}')">Add task</button>
+    </div>
+
     <div id="edit-err" style="font-size:12px;color:#A32D2D;min-height:16px;margin-top:8px"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="btn btn-primary" style="flex:1;justify-content:center;padding:11px" onclick="saveEditTime('${name.replace(/'/g,"\\'")}','${date}',${segs.length})">Save changes</button>
-      <button class="btn btn-ghost" style="flex:1;justify-content:center;padding:11px" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-ghost" style="flex:1;justify-content:center;padding:11px" onclick="closeModal()">Close</button>
     </div>
   </div>`);
 }
@@ -2311,6 +2340,68 @@ function addManualClockOut(name, date) {
   day.segments.push({type:'clockout', companyId:null, jobId:null, startTs:now.getTime(), endTs:now.getTime()});
   saveUserDay(name, day, date);
   showEditTimeModal(name, date);
+}
+// Admin adds a full work entry (clock-in→out) for a day someone forgot to clock in
+function adminAddEntry(name, date) {
+  const jobId = document.getElementById('add-job')?.value;
+  const startV = document.getElementById('add-start')?.value;
+  const endV = document.getElementById('add-end')?.value;
+  const err = document.getElementById('edit-err');
+  if (!startV || !endV) { if(err) err.textContent='Enter clock-in and clock-out times.'; return; }
+  const start = hhmmToTs(startV, date), end = hhmmToTs(endV, date);
+  if (end <= start) { if(err) err.textContent='Clock-out must be after clock-in.'; return; }
+  const job = getJobs().find(j=>j.id===jobId);
+  const day = getUserDay(name, date);
+  day.segments.push({type:'work', companyId: job?job.companyId:null, jobId: job?job.id:null, startTs:start, endTs:end, startLoc:null, addedByAdmin:true});
+  day.segments.sort((a,b)=>a.startTs-b.startTs);
+  saveUserDay(name, day, date);
+  showEditTimeModal(name, date);
+}
+// Admin adds a task on a day (works even if the person didn't clock in)
+function adminAddTaskNew(name, date) {
+  const text = (document.getElementById('add-task-text')?.value||'').trim();
+  const err = document.getElementById('edit-err');
+  if (!text) { if(err) err.textContent='Enter a task description.'; return; }
+  const timeV = document.getElementById('add-task-time')?.value;
+  const mins = parseInt(document.getElementById('add-task-mins')?.value||'',10);
+  const day = getUserDay(name, date);
+  if (!day.notes) day.notes = [];
+  day.notes.push({text, ts: timeV?hhmmToTs(timeV,date):Date.now(), mins: mins>0?mins:null, companyId:null, jobId:null});
+  resolveTaskOverlaps(day.notes, dayWorkWindow(day));
+  saveUserDay(name, day, date);
+  showEditTimeModal(name, date);
+}
+// Admin clocks an employee IN on their behalf (from the dashboard) — pick a job
+function adminClockIn(name) {
+  const jobs = getJobs().filter(j=>j.active), cos = getCompanies();
+  showModal(`<div class="modal">
+    <div class="modal-title">Clock in — ${name}</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Clocks ${name} in right now (no location). Use if they asked you to.</p>
+    <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Job</label>
+    <select id="ac-job" style="margin-bottom:14px">${jobs.map(j=>{const co=cos.find(c=>c.id===j.companyId);return `<option value="${j.id}">${j.name}${co?' · '+co.name.split(' ')[0]:''}</option>`}).join('')}</select>
+    <button class="btn btn-green btn-full" onclick="doAdminClockIn('${name.replace(/'/g,"\\'")}')">Clock in now</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:7px" onclick="closeModal()">Cancel</button>
+  </div>`);
+}
+function doAdminClockIn(name) {
+  const jobId = document.getElementById('ac-job')?.value;
+  const job = getJobs().find(j=>j.id===jobId);
+  const day = getUserDay(name);
+  const open = day.segments.find(s=>!s.endTs);
+  if (open) open.endTs = Date.now();
+  day.segments.push({type:'work', companyId: job?job.companyId:null, jobId: job?job.id:null, startTs:Date.now(), endTs:null, startLoc:null, addedByAdmin:true});
+  saveUserDay(name, day);
+  closeModal(); render();
+}
+// Admin clocks an employee OUT on their behalf (from the dashboard)
+function adminClockOut(name) {
+  const day = getUserDay(name);
+  const now = Date.now();
+  const open = day.segments.find(s=>!s.endTs);
+  if (open) open.endTs = now;
+  day.segments.push({type:'clockout', companyId:null, jobId:null, startTs:now, endTs:now});
+  saveUserDay(name, day);
+  render();
 }
 
 // — EXPORT MODALS —
