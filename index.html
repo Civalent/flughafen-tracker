@@ -262,7 +262,7 @@ function holidaysForYear(y) {
     {date:iso(11,dayAfterTg),   name:'Day after Thanksgiving'},
     {date:iso(12,24), name:'Christmas Eve'},
     {date:iso(12,25), name:'Christmas Day'},
-    {date:iso(12,31), name:"New Year's Eve"},
+    {date:iso(1,1),  name:"New Year's Day"},
   ];
 }
 function isHoliday(iso){ const y=+iso.slice(0,4); return holidaysForYear(y).find(h=>h.date===iso)||null; }
