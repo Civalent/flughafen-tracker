@@ -215,7 +215,9 @@ function defaultReminders() {
     enabled:false,
     clockIn:'07:00',
     clockOut:'17:00',
-    smsBackend:'', // future Firebase Function URL
+    msgClockIn:'Good morning! 🌅 Friendly reminder to clock in when you’re ready. Have a wonderful day! 😊',
+    msgClockOut:'Great work today! 🎉 Don’t forget to clock out before you head home. See you tomorrow! 👋',
+    smsBackend:'', // Firebase Function URL
   };
 }
 
@@ -480,7 +482,7 @@ function checkReminders() {
   if (me && me.remind === false) return; // manager excluded this employee from reminders
   const now = new Date();
   const hhmm = p2(now.getHours()) + ':' + p2(now.getMinutes());
-  const slots = [['clockIn','Time to clock in 🕐'], ['clockOut','Time to clock out ✅']];
+  const slots = [['clockIn', r.msgClockIn || 'Good morning! 🌅 Time to clock in.'], ['clockOut', r.msgClockOut || 'Great work today! 👋 Don’t forget to clock out.']];
   slots.forEach(([k, msg]) => {
     if (r[k] !== hhmm) return;
     const key = todayKey() + ':' + k + ':' + A.user.name;
@@ -1628,6 +1630,11 @@ function mgrReminders() {
         </div>
       </div>
 
+      <label style="font-size:11px;color:var(--text2);display:block;margin:12px 0 3px">Clock-in reminder message 😊</label>
+      <textarea id="rem-msgIn" rows="2" style="width:100%">${(r.msgClockIn||'').replace(/</g,'&lt;')}</textarea>
+      <label style="font-size:11px;color:var(--text2);display:block;margin:10px 0 3px">Clock-out reminder message 👋</label>
+      <textarea id="rem-msgOut" rows="2" style="width:100%">${(r.msgClockOut||'').replace(/</g,'&lt;')}</textarea>
+
       <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="saveReminders()">Save schedule</button>
       <div id="rem-saved" style="font-size:12px;color:var(--green);margin-top:6px;min-height:14px;text-align:center"></div>
     </div>
@@ -1871,10 +1878,14 @@ function saveBenefitsEdit(empId) {
 }
 
 function saveReminders() {
+  const prev = getReminders();
   const r = {
+    ...prev,
     enabled: document.getElementById('rem-enabled').checked,
     clockIn: document.getElementById('rem-clockIn').value,
     clockOut: document.getElementById('rem-clockOut').value,
+    msgClockIn: (document.getElementById('rem-msgIn')?.value||'').trim() || prev.msgClockIn,
+    msgClockOut: (document.getElementById('rem-msgOut')?.value||'').trim() || prev.msgClockOut,
     smsBackend: document.getElementById('rem-backend').value.trim(),
   };
   saveRem(r);
