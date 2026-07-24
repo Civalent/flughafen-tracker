@@ -186,6 +186,7 @@ async function initData() {
 // ── Defaults ───────────────────────────────────────────────
 function defaultRoster() {
   return [
+    {id:'mgr', name:'Vanessa Gamboa', pin:'7620', initials:'VG', phone:'', email:'', photo:null, isManager:true, c:'#0F6E56', bg:'#E1F5EE'},
     {id:'1', name:'Nathan Rangel',   pin:'1234', initials:'NR', phone:'', email:'', photo:null, ...PALETTE[0]},
     {id:'2', name:'Miguel Herrera',  pin:'5678', initials:'MH', phone:'', email:'', photo:null, ...PALETTE[1]},
     {id:'3', name:'Jose Herrera',    pin:'9090', initials:'JH', phone:'', email:'', photo:null, ...PALETTE[2]},
@@ -226,6 +227,8 @@ const getCompanies = () => ls.get(K.companies) || defaultCompanies();
 const getJobs      = () => ls.get(K.jobs)      || defaultJobs();
 const getIssues    = () => ls.get(K.issues)    || [];
 const getReminders = () => ls.get(K.reminders) || defaultReminders();
+// The manager, taken live from the roster (so edits to her profile apply everywhere); MANAGER is the fallback default.
+const getMgr = () => getRoster().find(u=>u.isManager) || MANAGER;
 // Which channel an employee gets reminders on: 'both' | 'text' | 'email'
 function remindChannel(u){ return (u && u.remindChannel) || 'both'; }
 // Contacts to send to for a given channel choice (blank = don't send that channel)
@@ -590,7 +593,7 @@ function pinKey(k) {
   if(A.pin.length===4){
     setTimeout(()=>{
       const pin=A.pin; A.pin=''; updateDots();
-      const all=[...getRoster(),MANAGER];
+      const all=getRoster();
       const user=all.find(u=>u.pin===pin);
       if(user){
         A.user=user;
@@ -608,7 +611,7 @@ function pinKey(k) {
 function updateDots() {
   document.querySelectorAll('.pin-dot').forEach((d,i)=>d.classList.toggle('filled',i<A.pin.length));
   const el=document.getElementById('pin-name'); if(!el)return;
-  const all=[...getRoster(),MANAGER];
+  const all=getRoster();
   const match=all.find(u=>u.pin===A.pin&&A.pin.length===4);
   el.textContent=match?'👋 '+match.name:'\u00a0';
 }
@@ -1099,7 +1102,7 @@ function pageManager() {
         <div style="font-size:11px;color:var(--text2)">${today}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        ${avatarHTML(MANAGER, 32)}
+        ${avatarHTML(getMgr(), 32)}
         <button class="btn btn-outline" style="color:var(--teal);font-size:12px;padding:5px 10px" onclick="goEmp()">My timesheet</button>
         <button class="btn btn-ghost" style="font-size:12px;padding:5px 10px" onclick="signOut()">Sign out</button>
       </div>
@@ -1176,7 +1179,7 @@ function setMTab(t) { A.mTab=t; render(); }
 //  MGR — DASHBOARD
 // ══════════════════════════════════════════════════════════════
 function mgrDashboard() {
-  const allUsers = [...getRoster(), MANAGER];
+  const allUsers = getRoster();
   const s = getStore(), td = s[todayKey()] || {};
   let totalIn=0, working=0, onBreak=0, done=0;
   allUsers.forEach(u => {
@@ -1216,7 +1219,7 @@ function mgrDashboard() {
 }
 
 function dashRows() {
-  const allUsers = [...getRoster(), MANAGER];
+  const allUsers = getRoster();
   const s = getStore(), td = s[todayKey()] || {};
   const cos = getCompanies();
   const jobs = getJobs();
@@ -1265,7 +1268,7 @@ function mgrReports() {
   const report = buildReport(A.rRange, A.rDate);
   const cos = getCompanies();
   const jobs = getJobs();
-  const allUsers = [...getRoster(), MANAGER];
+  const allUsers = getRoster();
 
   const coRows = cos.filter(c=>report.byCo[c.id]>0).map(c=>`
     <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:.5px solid var(--border2)">
@@ -1347,7 +1350,7 @@ function mgrReports() {
 
 function setRRange(r){A.rRange=r;A.rDate=todayKey();render();}
 function toggleReportEmp(name){
-  const all=[...getRoster(),MANAGER].map(u=>u.name);
+  const all=getRoster().map(u=>u.name);
   let inc = A.rEmpInclude ? [...A.rEmpInclude] : [...all];
   if(inc.includes(name)) inc=inc.filter(n=>n!==name); else inc.push(name);
   A.rEmpInclude = (inc.length>=all.length)?null:inc;
@@ -1358,7 +1361,7 @@ function reportEmpNone(){ A.rEmpInclude=[]; render(); }
 
 // Guided "create report" flow: pick range → pick who → generate PDF
 function showReportBuilder() {
-  const all=[...getRoster(),MANAGER];
+  const all=getRoster();
   const inc=A.rEmpInclude;
   showModal(`<div class="modal" style="max-height:85vh;overflow-y:auto">
     <div class="modal-title">Create PDF report</div>
@@ -1390,7 +1393,7 @@ function showReportBuilder() {
 }
 function rbSetAll(on){ document.querySelectorAll('.rb-cb').forEach(cb=>cb.checked=on); }
 function generateReportFromBuilder() {
-  const all=[...getRoster(),MANAGER].map(u=>u.name);
+  const all=getRoster().map(u=>u.name);
   const chosen=[...document.querySelectorAll('.rb-cb:checked')].map(cb=>cb.value);
   if(!chosen.length){ alert('Pick at least one employee.'); return; }
   A.rRange=document.getElementById('rb-range').value;
@@ -1414,7 +1417,7 @@ function buildReport(range, anchor, includeNames) {
   const cos = getCompanies();
   const jobs = getJobs();
   const inc = (typeof includeNames !== 'undefined') ? includeNames : null; // null = everyone; else array of names
-  const allUsers = [...getRoster(), MANAGER].filter(u => !inc || inc.includes(u.name));
+  const allUsers = getRoster().filter(u => !inc || inc.includes(u.name));
   const s = getStore();
   const d = new Date(anchor + 'T12:00:00');
   let dates = [];
@@ -1473,23 +1476,16 @@ function mgrRoster() {
         <div class="row">
           ${avatarHTML(u, 36)}
           <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:500">${u.name}</div>
+            <div style="font-size:13px;font-weight:500">${u.name}${u.isManager?' <span style="font-size:10px;color:var(--teal);font-weight:700">MGR</span>':''}</div>
             <div style="font-size:11px;color:var(--text2)">
-              PIN: <span style="font-family:monospace;font-weight:600">${u.pin}</span>
+              PIN: <span style="font-family:monospace;font-weight:600${u.isManager?';color:var(--teal)':''}">${u.pin}</span>
               ${u.phone?' · '+u.phone:''}
               ${u.email?' · '+u.email:''}
             </div>
           </div>
           <button style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:14px;padding:3px 7px;font-family:inherit" onclick="showEditEmpModal('${u.id}')">✎</button>
-          <button style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:14px;padding:3px 7px;font-family:inherit" onclick="confirmRemoveEmp('${u.id}')">✕</button>
+          ${u.isManager?'':`<button style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:14px;padding:3px 7px;font-family:inherit" onclick="confirmRemoveEmp('${u.id}')">✕</button>`}
         </div>`).join('')}
-      <div class="row">
-        ${avatarHTML(MANAGER, 36)}
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500">${MANAGER.name} <span style="font-size:10px;color:var(--teal);font-weight:700">MGR</span></div>
-          <div style="font-size:11px;color:var(--text2)">PIN: <span style="font-family:monospace;font-weight:600;color:var(--teal)">${MANAGER.pin}</span></div>
-        </div>
-      </div>
     </div>`;
 }
 
@@ -2167,7 +2163,7 @@ function saveAddEmp() {
   if(!v.name){err.textContent='Name required.';return;}
   if(!/^\d{4}$/.test(v.pin)){err.textContent='PIN must be 4 digits.';return;}
   const roster=getRoster();
-  if(v.pin===MANAGER.pin||roster.find(r=>r.pin===v.pin)){err.textContent='PIN already in use.';return;}
+  if(roster.find(r=>r.pin===v.pin)){err.textContent='PIN already in use.';return;}
   if(roster.find(r=>r.name.toLowerCase()===v.name.toLowerCase())){err.textContent='Name already exists.';return;}
   const p=PALETTE[roster.length%PALETTE.length];
   roster.push({id:Date.now().toString(),...v,initials:mkInit(v.name),...p});
@@ -2179,7 +2175,7 @@ function saveEditEmp(id) {
   if(!v.name){err.textContent='Name required.';return;}
   if(!/^\d{4}$/.test(v.pin)){err.textContent='PIN must be 4 digits.';return;}
   const roster=getRoster();
-  if(v.pin===MANAGER.pin||roster.find(r=>r.pin===v.pin&&r.id!==id)){err.textContent='PIN already in use.';return;}
+  if(roster.find(r=>r.pin===v.pin&&r.id!==id)){err.textContent='PIN already in use.';return;}
   if(roster.find(r=>r.name.toLowerCase()===v.name.toLowerCase()&&r.id!==id)){err.textContent='Name already exists.';return;}
   const idx=roster.findIndex(r=>r.id===id);if(idx===-1)return;
   const oldName=roster[idx].name;
@@ -2464,7 +2460,7 @@ function showExportModal() {
 //  NAV
 // ══════════════════════════════════════════════════════════════
 function goMgr() { clearInterval(A.clockIv); A.view='manager'; A.mTab='dashboard'; render(); }
-function goEmp() { clearInterval(A.dashIv); A.user=MANAGER; A.view='employee'; render(); }
+function goEmp() { clearInterval(A.dashIv); A.user=getMgr(); A.view='employee'; render(); }
 function signOut() { clearInterval(A.clockIv); clearInterval(A.dashIv); clearInterval(REM_IV); A.user=null; A.view='login'; A.pin=''; render(); }
 
 // ══════════════════════════════════════════════════════════════
@@ -2647,7 +2643,7 @@ function exportTeamDayPDF(dateArg, includeNames) {
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'pt',format:'letter'});
   const inc = includeNames;
-  const allUsers=[...getRoster(),MANAGER].filter(u=>!inc||inc.includes(u.name)), cos=getCompanies();
+  const allUsers=getRoster().filter(u=>!inc||inc.includes(u.name)), cos=getCompanies();
   const dateKey = dateArg || todayKey();
   const s=getStore(), td=s[dateKey]||{};
   const date=fmtDateLong(dateKey);
@@ -2694,7 +2690,7 @@ function exportTeamDayPDF(dateArg, includeNames) {
     });
   }
 
-  y+=14; pdfFoot(doc, y, 'Mgr: '+MANAGER.name);
+  y+=14; pdfFoot(doc, y, 'Mgr: '+getMgr().name);
   doc.save(`team-timesheet-${dateKey}.pdf`);
 }
 
@@ -2702,7 +2698,7 @@ function exportTeamDayPDF(dateArg, includeNames) {
 function exportTeamRangePDF(range) {
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'pt',format:'letter'});
-  const allUsers=[...getRoster(),MANAGER];
+  const allUsers=getRoster();
   const r = buildReport(range, A.rDate||todayKey(), A.rEmpInclude);
   const titles={weekly:'Weekly',biweekly:'Biweekly',monthly:'Monthly'};
   const lm=40,rm=572; let y=pdfHead(doc, 'Team Timesheet — '+titles[range], r.label);
@@ -2777,7 +2773,7 @@ function exportTeamRangePDF(range) {
     });
   }
 
-  y+=14; pdfFoot(doc, y, 'Mgr: '+MANAGER.name);
+  y+=14; pdfFoot(doc, y, 'Mgr: '+getMgr().name);
   doc.save(`team-timesheet-${range}-${todayKey()}.pdf`);
 }
 
