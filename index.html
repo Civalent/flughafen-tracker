@@ -266,12 +266,10 @@ function holidaysForYear(y) {
   function nthWeekday(month, weekday, n){ let count=0; for(let d=1;d<=31;d++){ const dt=new Date(y,month-1,d); if(dt.getMonth()!==month-1) break; if(dt.getDay()===weekday){ count++; if(count===n) return d; } } return null; }
   const laborDay = nthWeekday(9, 1, 1);          // 1st Monday of Sept
   const thanksgiving = nthWeekday(11, 4, 4);      // 4th Thursday of Nov
-  const dayAfterTg = thanksgiving+1;
   return [
     {date:iso(7,4),  name:'Independence Day'},
     {date:iso(9,laborDay), name:'Labor Day'},
     {date:iso(11,thanksgiving), name:'Thanksgiving'},
-    {date:iso(11,dayAfterTg),   name:'Day after Thanksgiving'},
     {date:iso(12,24), name:'Christmas Eve'},
     {date:iso(12,25), name:'Christmas Day'},
     {date:iso(1,1),  name:"New Year's Day"},
