@@ -2216,9 +2216,9 @@ function showEditTimeModal(name, targetDate) {
         <span style="font-size:13px;font-weight:500;flex:1;color:${color}">${label}${job?' · <span style="color:'+(co?co.c:'var(--text2)')+'">'+job.name+'</span>':''}</span>
         ${s.type !== 'clockout' ? `<button onclick="deleteSeg('${name}','${date}',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:12px;padding:2px 6px;font-family:inherit">✕ Delete</button>` : ''}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
         <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Start</div><input type="time" id="seg-start-${i}" value="${tsToTimeInput(s.startTs)}"></div>
-        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">End ${isOpen?'<span style="color:var(--green);font-weight:500">(open)</span>':''}</div><input type="time" id="seg-end-${i}" value="${tsToTimeInput(s.endTs)}" ${s.type==='clockout'?'disabled':''}></div>
+        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">End ${isOpen?'<span style="color:var(--green);font-weight:500">(open)</span>':''}</div><input type="time" id="seg-end-${i}" value="${tsToTimeInput(s.endTs)}" ${s.type==='clockout'?'disabled':''}></div>${s.type!=='clockout' ? `<div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Hours</div><input type="number" min="0" step="0.25" id="seg-hours-${i}" placeholder="e.g. 8" onchange="setSegEndFromHours(${i})"></div>` : ''}
       </div>
       ${s.startLoc?'<div style="margin-top:6px">'+locLink(s.startLoc)+'</div>':''}
     </div>`;
@@ -2251,9 +2251,9 @@ function showEditTimeModal(name, targetDate) {
       <select id="add-job" style="margin-bottom:8px">${getJobs().filter(j=>j.active).map(j=>{const co=cos.find(c=>c.id===j.companyId);return `<option value="${j.id}">${j.name}${co?' · '+co.name.split(' ')[0]:''}</option>`}).join('')}</select>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Clock in</label><input id="add-start" type="time" value="08:00"></div>
-        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Clock out</label><input id="add-end" type="time" value="17:00"></div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Clock out</label><input id="add-end" type="time" value="17:00" oninput="if(this.value)document.getElementById('add-hours').value=''"></div>
       </div>
-      <button class="btn btn-green btn-full" style="font-size:13px" onclick="adminAddEntry('${name.replace(/'/g,"\\'")}','${date}')">Add work entry</button>
+      <div style="text-align:center;font-size:11px;color:var(--text3);margin:2px 0 8px">— or enter hours instead of clock out —</div><div style="margin-bottom:8px"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Hours worked</label><input id="add-hours" type="number" min="0" step="0.25" placeholder="e.g. 8" oninput="if(this.value)document.getElementById('add-end').value=''"></div><button class="btn btn-green btn-full" style="font-size:13px" onclick="adminAddEntry('${name.replace(/'/g,"\\'")}','${date}')">Add work entry</button>
     </div>
 
     ${(day.notes&&day.notes.length)?`<div class="slabel" style="margin-top:16px">Tasks</div>${taskRows}`:''}
@@ -2349,7 +2349,7 @@ function saveEditTime(name, date, segCount) {
   closeModal();
   render();
 }
-function deleteSeg(name, date, idx) {
+function setSegEndFromHours(i) { const startEl = document.getElementById('seg-start-'+i); const hoursEl = document.getElementById('seg-hours-'+i); const endEl = document.getElementById('seg-end-'+i); if (!startEl || !hoursEl || !endEl || !startEl.value) return; const hrs = parseFloat(hoursEl.value); if (!(hrs > 0)) return; const hm = startEl.value.split(':').map(Number); const totalMin = ((hm[0]*60 + hm[1] + Math.round(hrs*60)) % 1440 + 1440) % 1440; endEl.value = p2(Math.floor(totalMin/60))+':'+p2(totalMin%60); } function deleteSeg(name, date, idx) {
   if (!confirm('Delete this entry?')) return;
   const day = getUserDay(name, date);
   day.segments.splice(idx, 1);
@@ -2367,10 +2367,10 @@ function addManualClockOut(name, date) {
 function adminAddEntry(name, date) {
   const jobId = document.getElementById('add-job')?.value;
   const startV = document.getElementById('add-start')?.value;
-  const endV = document.getElementById('add-end')?.value;
+  const endV = document.getElementById('add-end')?.value; const hoursV = parseFloat(document.getElementById('add-hours')?.value);
   const err = document.getElementById('edit-err');
-  if (!startV || !endV) { if(err) err.textContent='Enter clock-in and clock-out times.'; return; }
-  const start = hhmmToTs(startV, date), end = hhmmToTs(endV, date);
+  if (!startV) { if(err) err.textContent='Enter a clock-in time.'; return; } if (!endV && !(hoursV > 0)) { if(err) err.textContent='Enter a clock-out time or hours worked.'; return; }
+  const start = hhmmToTs(startV, date); const end = endV ? hhmmToTs(endV, date) : start + Math.round(hoursV*3600000);
   if (end <= start) { if(err) err.textContent='Clock-out must be after clock-in.'; return; }
   const job = getJobs().find(j=>j.id===jobId);
   const day = getUserDay(name, date);
