@@ -2262,24 +2262,23 @@ function showEditTimeModal(name, targetDate) {
   const segLabel = {work:'Work',break:'Break',lunch:'Lunch',clockout:'Clock out'};
   const segColor = {work:'var(--green)',break:'var(--orange)',lunch:'var(--blue)',clockout:'var(--text2)'};
   const segRows = segs.map((s,i)=>{
+    if (s.type==='clockout') return '';
     const co = cos.find(c=>c.id===s.companyId);
     const job = jobs.find(j=>j.id===s.jobId);
     const label = segLabel[s.type] || s.type;
     const color = segColor[s.type] || 'var(--text)';
-    const isOpen = !s.endTs && s.type !== 'clockout';
+    const isOpen = !s.endTs;
     return `<div style="padding:10px 0;border-bottom:.5px solid var(--border2)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <span style="width:9px;height:9px;border-radius:3px;background:${color};flex-shrink:0"></span>
         <span style="font-size:13px;font-weight:500;flex:1;color:${color}">${label}${job?' · <span style="color:'+(co?co.c:'var(--text2)')+'">'+job.name+'</span>':''}</span>
-        ${s.type !== 'clockout' ? `<button onclick="deleteSeg('${name}','${date}',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:12px;padding:2px 6px;font-family:inherit">✕ Delete</button>` : ''}
+        <button onclick="deleteSeg('${name}','${date}',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:12px;padding:2px 6px;font-family:inherit">✕ Delete</button>
       </div>
-      ${s.type==='clockout' ? `<div style="display:grid;grid-template-columns:1fr;gap:8px">
-        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Clock out</div><input type="time" id="seg-end-${i}" value="${tsToTimeInput(s.startTs)}"></div>
-      </div>` : `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
         <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Clock in</div><input type="time" id="seg-start-${i}" value="${tsToTimeInput(s.startTs)}"></div>
         <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Clock out ${isOpen?'<span style="color:var(--green);font-weight:500">(open)</span>':''}</div><input type="time" id="seg-end-${i}" value="${tsToTimeInput(s.endTs)}"></div>
         <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Hours</div><input type="number" min="0" step="0.25" id="seg-hours-${i}" placeholder="e.g. 8" onchange="setSegEndFromHours(${i})"></div>
-      </div>`}
+      </div>
       ${s.startLoc?'<div style="margin-top:6px">'+locLink(s.startLoc)+'</div>':''}
     </div>`;
   }).join('');
@@ -2393,15 +2392,9 @@ function saveEditTime(name, date, segCount) {
   const updated = [];
   for (let i = 0; i < segs.length; i++) {
     const s = {...segs[i]};
+    if (s.type === 'clockout') { updated.push(s); continue; }
     const endEl = document.getElementById('seg-end-'+i);
     if (!endEl) continue;
-    if (s.type === 'clockout') {
-      const ts = timeInputToTs(endEl.value, date);
-      s.startTs = ts || s.startTs;
-      s.endTs = ts || s.endTs;
-      updated.push(s);
-      continue;
-    }
     const startEl = document.getElementById('seg-start-'+i);
     if (!startEl) continue;
     const newStart = timeInputToTs(startEl.value, date);
