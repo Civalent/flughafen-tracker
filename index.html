@@ -468,6 +468,31 @@ function getStatus(segs) {
 }
 function isClockedIn(segs)  { return segs && segs.length > 0 && segs.some(s=>!s.endTs); }
 function isClockedOut(segs) { return segs && segs.length > 0 && segs[segs.length-1].type==='clockout'; }
+// If anyone is still clocked in (or on break/lunch) past 6:00 PM local time, auto-clock them out with the
+// recorded time set to 4:30 PM — covers people who forgot to clock out. Runs on load and every minute the
+// app stays open; a no-op once a clockout segment already exists for that day for that person.
+function autoCloseForgottenClockOuts() {
+  const now = new Date();
+  if (now.getHours() < 18) return false;
+  const key = todayKey();
+  const s = getStore();
+  const td = s[key];
+  if (!td) return false;
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 16, 30, 0, 0).getTime();
+  let changed = false;
+  Object.keys(td).forEach(name => {
+    const day = td[name];
+    const segs = day && day.segments;
+    if (!segs || !segs.length || isClockedOut(segs)) return;
+    const open = segs.find(s2=>!s2.endTs);
+    if (!open) return;
+    open.endTs = Math.max(open.startTs, cutoff);
+    segs.push({type:'clockout', companyId:null, jobId:null, startTs:cutoff, endTs:cutoff, autoClockedOut:true});
+    changed = true;
+  });
+  if (changed) saveStore(s);
+  return changed;
+}
 
 // ── Reminders (browser notifications) ──────────────────────
 let REM_IV = null;
@@ -837,7 +862,17 @@ async function doClock(action) {
     if (!selJob) { alert('Please select a job first.'); return; }
     segs.push({type:'work', companyId:selJob.companyId, jobId:selJob.id, startTs:now, endTs:null, startLoc, noLoc:!hasLoc});
   } else if (action==='out') {
-    closeOpen();
+    const alreadyLunch = segs.some(s=>s.type==='lunch');
+    const tookLunch = !alreadyLunch && confirm('Did you take a lunch break today?\n\nOK = yes, deduct 30 minutes from your work time.\nCancel = no, do not deduct anything.');
+    const open = segs.find(s=>!s.endTs);
+    if (tookLunch && open) {
+      const lunchStart = Math.max(open.startTs, now - 30*60000);
+      open.endTs = lunchStart;
+      if (hasLoc) open.endLoc = loc;
+      segs.push({type:'lunch', companyId:null, jobId:null, startTs:lunchStart, endTs:now, startLoc, noLoc:!hasLoc});
+    } else {
+      closeOpen();
+    }
     segs.push({type:'clockout', companyId:null, jobId:null, startTs:now, endTs:now, startLoc, noLoc:!hasLoc});
   } else if (action==='break') {
     closeOpen();
@@ -1411,6 +1446,19 @@ function navReport(dir){
   render();
 }
 
+// Pay period anchor: the biweekly period Mon 2026-08-03 – Sun 2026-08-16 is a real payroll period, paid Fri
+// 2026-08-21. Every biweekly report snaps to a 14-day block counted from this anchor, so periods always line
+// up with actual payroll boundaries no matter what date the report is viewed from.
+const PAY_PERIOD_ANCHOR = new Date(2026, 7, 3);
+function biweeklyPeriodStart(d) {
+  const msPerDay = 86400000;
+  const dayOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const daysSince = Math.round((dayOnly - PAY_PERIOD_ANCHOR) / msPerDay);
+  const periodIndex = Math.floor(daysSince / 14);
+  const start = new Date(PAY_PERIOD_ANCHOR);
+  start.setDate(start.getDate() + periodIndex*14);
+  return start;
+}
 function buildReport(range, anchor, includeNames) {
   const cos = getCompanies();
   const jobs = getJobs();
@@ -1429,8 +1477,13 @@ function buildReport(range, anchor, includeNames) {
       dates.push(dd.toISOString().slice(0,10));
     }
   } else {
-    const diff = d.getDay()===0 ? -6 : 1-d.getDay();
-    const mon = new Date(d); mon.setDate(d.getDate()+diff);
+    let mon;
+    if (range==='biweekly') {
+      mon = biweeklyPeriodStart(d);
+    } else {
+      const diff = d.getDay()===0 ? -6 : 1-d.getDay();
+      mon = new Date(d); mon.setDate(d.getDate()+diff);
+    }
     const count = range==='biweekly' ? 14 : 7;
     for (let i=0;i<count;i++) {
       const dd = new Date(mon); dd.setDate(mon.getDate()+i);
@@ -1455,6 +1508,10 @@ function buildReport(range, anchor, includeNames) {
   let label;
   if (range==='daily') label = fmtDate(anchor);
   else if (range==='monthly') label = new Date(anchor+'T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  else if (range==='biweekly') {
+    const payDate = new Date(dates[0]+'T12:00:00'); payDate.setDate(payDate.getDate()+18);
+    label = fmtDate(dates[0])+' – '+fmtDate(dates[dates.length-1])+'  ·  Paid '+fmtDate(payDate.toISOString().slice(0,10));
+  }
   else label = fmtDate(dates[0])+' – '+fmtDate(dates[dates.length-1]);
   return {totalWork, days:daysSet.size, byCo, byEmp, byEmpCo, byJob, byEmpJob, dates, label, range, anchor};
 }
@@ -2216,10 +2273,13 @@ function showEditTimeModal(name, targetDate) {
         <span style="font-size:13px;font-weight:500;flex:1;color:${color}">${label}${job?' · <span style="color:'+(co?co.c:'var(--text2)')+'">'+job.name+'</span>':''}</span>
         ${s.type !== 'clockout' ? `<button onclick="deleteSeg('${name}','${date}',${i})" style="background:none;border:none;cursor:pointer;color:#A32D2D;font-size:12px;padding:2px 6px;font-family:inherit">✕ Delete</button>` : ''}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Start</div><input type="time" id="seg-start-${i}" value="${tsToTimeInput(s.startTs)}"></div>
-        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">End ${isOpen?'<span style="color:var(--green);font-weight:500">(open)</span>':''}</div><input type="time" id="seg-end-${i}" value="${tsToTimeInput(s.endTs)}" ${s.type==='clockout'?'disabled':''}></div>${s.type!=='clockout' ? `<div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Hours</div><input type="number" min="0" step="0.25" id="seg-hours-${i}" placeholder="e.g. 8" onchange="setSegEndFromHours(${i})"></div>` : ''}
-      </div>
+      ${s.type==='clockout' ? `<div style="display:grid;grid-template-columns:1fr;gap:8px">
+        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Clock out</div><input type="time" id="seg-end-${i}" value="${tsToTimeInput(s.startTs)}"></div>
+      </div>` : `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Clock in</div><input type="time" id="seg-start-${i}" value="${tsToTimeInput(s.startTs)}"></div>
+        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Clock out ${isOpen?'<span style="color:var(--green);font-weight:500">(open)</span>':''}</div><input type="time" id="seg-end-${i}" value="${tsToTimeInput(s.endTs)}"></div>
+        <div><div style="font-size:11px;color:var(--text2);margin-bottom:3px">Hours</div><input type="number" min="0" step="0.25" id="seg-hours-${i}" placeholder="e.g. 8" onchange="setSegEndFromHours(${i})"></div>
+      </div>`}
       ${s.startLoc?'<div style="margin-top:6px">'+locLink(s.startLoc)+'</div>':''}
     </div>`;
   }).join('');
@@ -2333,14 +2393,22 @@ function saveEditTime(name, date, segCount) {
   const updated = [];
   for (let i = 0; i < segs.length; i++) {
     const s = {...segs[i]};
+    const endEl = document.getElementById('seg-end-'+i);
+    if (!endEl) continue;
+    if (s.type === 'clockout') {
+      const ts = timeInputToTs(endEl.value, date);
+      s.startTs = ts || s.startTs;
+      s.endTs = ts || s.endTs;
+      updated.push(s);
+      continue;
+    }
     const startEl = document.getElementById('seg-start-'+i);
-    const endEl   = document.getElementById('seg-end-'+i);
     if (!startEl) continue;
     const newStart = timeInputToTs(startEl.value, date);
-    const newEnd   = endEl && endEl.value ? timeInputToTs(endEl.value, date) : s.endTs;
+    const newEnd   = endEl.value ? timeInputToTs(endEl.value, date) : s.endTs;
     if (newStart && newEnd && newEnd <= newStart) { err.textContent = `Entry ${i+1}: end must be after start.`; return; }
     s.startTs = newStart || s.startTs;
-    if (s.type !== 'clockout') s.endTs = newEnd || null;
+    s.endTs = newEnd || null;
     updated.push(s);
   }
   updated.sort((a,b) => a.startTs - b.startTs);
@@ -2785,7 +2853,7 @@ function exportReportPDF() {
 //  BOOT
 // ══════════════════════════════════════════════════════════════
 document.getElementById('app').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--text2);font-size:14px">Loading…</div>';
-initData().then(render).catch(err => { console.error('Init failed, starting anyway:', err); render(); });
+initData().then(() => { autoCloseForgottenClockOuts(); render(); setInterval(() => { if (autoCloseForgottenClockOuts()) render(); }, 60000); }).catch(err => { console.error('Init failed, starting anyway:', err); render(); });
 
 // Register service worker for offline + install-as-app behavior.
 // Auto-updates: when a new version is deployed, the new SW takes over and
